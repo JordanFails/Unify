@@ -19,14 +19,6 @@ dependencies {
     compileOnly("com.mojang:authlib:3.13.56")
     implementation(kotlin("stdlib"))
     implementation("com.github.cryptomorin:XSeries:10.0.0")
-
-    // include whichever version handlers you want shaded in
-//    implementation(project(":unify-nms:unify-nms-v1_8_R3"))
-//    implementation(project(":unify-nms:unify-nms-v1_9_R2"))
-//    implementation(project(":unify-nms:unify-nms-v1_12_R1"))
-//    implementation(project(":unify-nms:unify-nms-v1_16_R3"))
-//    implementation(project(":unify-nms:unify-nms-v1_20_R4"))
-//    implementation(project(":unify-nms:unify-nms-v1_21_R1"))
 }
 
 kotlin {
