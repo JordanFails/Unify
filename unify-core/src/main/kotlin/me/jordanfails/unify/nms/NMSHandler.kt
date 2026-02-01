@@ -30,7 +30,32 @@ interface NMSHandler {
     fun updateMenuTitle(player: Player, title: String)
     fun refreshMenuInventory(player: Player)
     fun isCustomInventory(inventory: Inventory): Boolean
-//    fun getTopInventory(player: Player): Inventory?
 
-    /** You can add more (e.g., NBT utilities, packet methods, ActionBars, etc.) */
+    // --- Nametag Visibility (ScoreboardTeam packets) ---
+    /**
+     * Sends a scoreboard team packet to hide a target player's nametag from the viewer.
+     * Uses the "never" nameTagVisibility option.
+     */
+    fun sendHideNametagPacket(viewer: Player, target: Player)
+    
+    /**
+     * Sends a scoreboard team packet to show a target player's nametag to the viewer.
+     * Uses the "always" nameTagVisibility option.
+     */
+    fun sendShowNametagPacket(viewer: Player, target: Player)
+    
+    /**
+     * Removes the nametag team for a target from a viewer (cleanup).
+     */
+    fun sendRemoveNametagTeamPacket(viewer: Player, target: Player)
+    
+    /**
+     * Sends a nametag team packet with prefix and suffix for colored nametags.
+     * @param viewer The player who will see the nametag
+     * @param target The player whose nametag is being modified
+     * @param teamName Unique team name for this nametag
+     * @param prefix Prefix to display before the player's name (color codes)
+     * @param suffix Suffix to display after the player's name
+     */
+    fun sendNametagPacket(viewer: Player, target: Player, teamName: String, prefix: String, suffix: String)
 }

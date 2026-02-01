@@ -1,6 +1,5 @@
-package net.ascendmc.core.utils.cubedmenu
+package me.jordanfails.unify.menu.tasks
 
-import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.menu.Menu
 import me.jordanfails.unify.nms.NMSHandler
 import me.jordanfails.unify.nms.NMSHandlerFactory

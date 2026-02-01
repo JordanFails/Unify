@@ -1,7 +1,7 @@
 package me.jordanfails.unify.menu.menus.listener
 
 import me.jordanfails.unify.menu.Menu
-import me.jordanfails.unify.menu.menus.SelectItemStackMenu
+import me.jordanfails.unify.menu.menus.menus.SelectItemStackMenu
 import org.bukkit.Material
 import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler

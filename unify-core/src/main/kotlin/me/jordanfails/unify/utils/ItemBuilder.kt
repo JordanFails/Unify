@@ -110,6 +110,12 @@ class ItemBuilder(private val item: ItemStack) {
         item.itemMeta = meta
     }
 
+    fun customData(data: Int) = apply {
+        val meta = item.itemMeta ?: Bukkit.getItemFactory().getItemMeta(item.type)
+        meta?.setCustomModelData(data)
+        item.itemMeta = meta
+    }
+
     fun type(material: Material) = apply { item.type = material }
 
     fun type(xMaterial: XMaterial) = apply {

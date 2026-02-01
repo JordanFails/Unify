@@ -15,6 +15,9 @@ repositories {
     maven("https://repo.codemc.io/repository/nms/") {
         name = "codemc-nms-repo"
     }
+    maven("https://maven.elmakers.com/repository") {
+        name = "elmakers"
+    }
 }
 
 dependencies {

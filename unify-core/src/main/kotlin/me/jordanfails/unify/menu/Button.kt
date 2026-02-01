@@ -1,5 +1,6 @@
 package me.jordanfails.unify.menu
 
+import com.cryptomorin.xseries.XMaterial
 import com.cryptomorin.xseries.XSound
 import com.google.common.base.Joiner
 import me.jordanfails.unify.UnifyCore
@@ -32,7 +33,7 @@ abstract class Button {
         return " "
     }
 
-    open fun getDescription(player: Player): MutableList<String>? {
+    open fun getDescription(player: Player): MutableList<String> {
         return mutableListOf()
     }
 
@@ -139,9 +140,9 @@ abstract class Button {
                     }
                 }
 
-                override fun getDescription(player: Player): MutableList<String>? {
+                override fun getDescription(player: Player): MutableList<String> {
                     return if (item.hasItemMeta() && item.itemMeta!!.hasLore()) {
-                        item.itemMeta!!.lore
+                        item.itemMeta!!.lore!!
                     } else {
                         mutableListOf()
                     }

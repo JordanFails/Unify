@@ -3,7 +3,7 @@ package me.jordanfails.unify.menu.listener
 import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.menu.Button
 import me.jordanfails.unify.menu.Menu
-import me.jordanfails.unify.menu.menus.InteractiveMenu
+import me.jordanfails.unify.menu.menus.menus.InteractiveMenu
 import me.jordanfails.unify.menu.menus.SlotBehavior
 import me.jordanfails.unify.utils.ItemBuilder
 import org.bukkit.event.Listener
@@ -14,7 +14,6 @@ import org.bukkit.event.EventPriority
 import org.bukkit.event.inventory.*
 import org.bukkit.event.player.PlayerQuitEvent
 import org.bukkit.Bukkit
-import kotlin.collections.get
 
 object ButtonListeners : Listener {
 

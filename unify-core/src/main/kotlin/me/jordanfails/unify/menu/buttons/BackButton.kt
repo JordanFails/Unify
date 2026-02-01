@@ -18,7 +18,7 @@ class BackButton(
         return "${ChatColor.GREEN}Go Back"
     }
 
-    override fun getDescription(player: Player): MutableList<String>? {
+    override fun getDescription(player: Player): MutableList<String> {
         return if (destination == null) {
             mutableListOf()
         } else {

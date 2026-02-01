@@ -12,7 +12,7 @@ class GlassButton(val material: Material = XSupport.resolve(XMaterial.GRAY_STAIN
         return " "
     }
 
-    override fun getDescription(player: Player): MutableList<String>? {
+    override fun getDescription(player: Player): MutableList<String> {
         return mutableListOf()
     }
 

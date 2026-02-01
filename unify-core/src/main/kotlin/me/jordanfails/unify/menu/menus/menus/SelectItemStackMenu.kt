@@ -1,4 +1,4 @@
-package me.jordanfails.unify.menu.menus
+package me.jordanfails.unify.menu.menus.menus
 
 import me.jordanfails.unify.menu.Button
 import me.jordanfails.unify.menu.Menu
@@ -29,7 +29,7 @@ class SelectItemStackMenu(
             return "${ChatColor.GREEN}${ChatColor.BOLD}Select an item..."
         }
 
-        override fun getDescription(player: Player): MutableList<String>? {
+        override fun getDescription(player: Player): MutableList<String> {
             return mutableListOf("${ChatColor.GRAY}Click on an item in your inventory to select it.")
         }
 

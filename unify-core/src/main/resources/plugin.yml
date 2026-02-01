@@ -2,3 +2,5 @@ name: unify-core
 version: '1.0-SNAPSHOT'
 main: me.jordanfails.unify.UnifyCore
 api-version: '1.18'
+author: "JordanFails"
+website: "https://github.com/JordanFails"

@@ -2,10 +2,9 @@ package me.jordanfails.unify.menu.buttons
 
 import com.cryptomorin.xseries.XMaterial
 import me.jordanfails.unify.menu.Button
-import me.jordanfails.unify.menu.menus.InteractiveMenu
+import me.jordanfails.unify.menu.menus.menus.InteractiveMenu
 import me.jordanfails.unify.menu.menus.SlotBehavior
 import me.jordanfails.unify.utils.ItemBuilder
-import org.bukkit.Material
 import org.bukkit.entity.Player
 import org.bukkit.event.inventory.ClickType
 import org.bukkit.inventory.InventoryView

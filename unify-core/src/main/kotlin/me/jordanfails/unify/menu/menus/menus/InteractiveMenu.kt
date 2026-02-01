@@ -1,8 +1,9 @@
-package me.jordanfails.unify.menu.menus
+package me.jordanfails.unify.menu.menus.menus
 
 import me.jordanfails.unify.menu.Button
 import me.jordanfails.unify.menu.Menu
 import me.jordanfails.unify.menu.buttons.InteractiveSlotButton
+import me.jordanfails.unify.menu.menus.SlotBehavior
 import org.bukkit.Material
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
