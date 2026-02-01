@@ -15,22 +15,46 @@ repositories {
 }
 
 dependencies {
+    // Compile against 1.16.5 API (has modern Material names, runs on Java 8-16)
     compileOnly("org.spigotmc:spigot-api:1.16.5-R0.1-SNAPSHOT")
-    compileOnly("com.mojang:authlib:3.13.56")
+    compileOnly("com.mojang:authlib:1.5.25") // Java 8 compatible version
     implementation(kotlin("stdlib"))
     implementation("com.github.cryptomorin:XSeries:10.0.0")
 }
 
+// Default compilation for Java 8 (maximum compatibility)
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain(8)
 }
 java {
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(21))
+        languageVersion.set(JavaLanguageVersion.of(8))
     }
 }
 
 tasks {
+    // Legacy shadow jar (Java 8 - for 1.8 to 1.16 servers)
+    val shadowJarLegacy by registering(com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar::class) {
+        from(sourceSets.main.get().output)
+        configurations = listOf(project.configurations.runtimeClasspath.get())
+        archiveBaseName.set("Unify")
+        archiveClassifier.set("legacy")
+        
+        // Ensure Java 8 bytecode
+        manifest {
+            attributes["Multi-Release"] = false
+        }
+    }
+    
+    // Modern shadow jar (Java 17 - for 1.17+ servers)
+    val shadowJarModern by registering(com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar::class) {
+        from(sourceSets.main.get().output)
+        configurations = listOf(project.configurations.runtimeClasspath.get())
+        archiveBaseName.set("Unify")
+        archiveClassifier.set("modern")
+    }
+    
+    // Default shadowJar uses legacy for compatibility
     shadowJar {
         archiveBaseName.set("Unify")
         archiveClassifier.set("")
