@@ -26,7 +26,7 @@ class NMSHandler_v1_16_R3 : NMSHandler {
     }
 
     override fun getServerVersion(): String {
-        return Bukkit.getServer().javaClass.`package`.name.substringAfterLast(".")
+        return Bukkit.getBukkitVersion().split("-").first()
     }
 
     override fun getPing(player: Player): Int {

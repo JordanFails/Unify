@@ -1,58 +1,30 @@
-############################################################
 # Gradle
-############################################################
 .gradle/
-build/
-out/
+**/build/
+**/out/
+
+# Keep Gradle wrapper
+!gradle/wrapper/
 !gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
 
 # Local Gradle configurations
 gradle-app.setting
 gradle-app.properties
 
-# Local build cache
-**/build/
-**/out/
-
-############################################################
 # IntelliJ IDEA / JetBrains
-############################################################
 .idea/
 *.iml
 *.ipr
 *.iws
 
-# Project-specific caches
-.idea/**/workspace.xml
-.idea/**/tasks.xml
-.idea/**/dictionaries
-.idea/**/shelf/
-.idea/**/httpRequests/
-.idea/**/dataSources/
-.idea/**/dataSources.local.xml
-.idea/**/sqlDataSources.xml
-.idea/**/dynamic.xml
-.idea/**/uiDesigner.xml
-.idea/**/usage.statistics.xml
-.idea/**/modules.xml
-.idea/**/libraries
-.idea/**/caches/
-.idea/**/scopes/
-
-# Editor language caches
-.idea/kotlinScripting
-
-############################################################
 # Eclipse / Other IDEs
-############################################################
 .classpath
 .project
 .settings/
 bin/
 
-############################################################
 # OS / Misc
-############################################################
 .DS_Store
 Thumbs.db
 ehthumbs.db
@@ -62,17 +34,14 @@ desktop.ini
 *.tmp
 *.bak
 *.orig
+*~
 
-############################################################
 # Kotlin and Java Artifacts
-############################################################
 *.class
-*.jar
-*.war
-*.ear
-*.zip
-*.tar.gz
 *.log
+
+# Keep wrapper jar but ignore other jars
+!gradle/wrapper/gradle-wrapper.jar
 
 # Generated test reports, coverage
 reports/
@@ -81,20 +50,14 @@ test-results/
 *.coverage
 *.hprof
 
-############################################################
 # Run configurations / Local env
-############################################################
 run/
 logs/
 local.properties
 *.local.yml
 *.local.json
 
-############################################################
 # Minecraft / Paper specific
-############################################################
-# Server copies or test server directories
-/plugins/
 plugins_test/
 server/
 *.dat
@@ -102,12 +65,10 @@ server/
 *.lck
 
 # Plugin build outputs
-/deploy/
+deploy/
 *.jar.original
 *.jar.backup
 
-############################################################
-# Kotlin build cache and IntelliJ meta
-############################################################
+# Kotlin build cache
 .kotlin/
 kotlin-js-store/
