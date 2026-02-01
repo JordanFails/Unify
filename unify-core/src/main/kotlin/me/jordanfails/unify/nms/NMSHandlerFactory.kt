@@ -60,7 +60,16 @@ object NMSHandlerFactory {
         "1.21.1" to "v1_21_R1",
         "1.21.2" to "v1_21_R1",
         "1.21.3" to "v1_21_R1",
-        "1.21.4" to "v1_21_R1"
+        "1.21.4" to "v1_21_R1",
+        "1.21.5" to "v1_21_R1",
+        "1.21.6" to "v1_21_R1",
+        "1.21.7" to "v1_21_R1",
+        "1.21.8" to "v1_21_R1",
+        "1.21.9" to "v1_21_R1",
+        "1.21.10" to "v1_21_R1",
+        "1.21.11" to "v1_21_R1"
+
+
     )
 
     /** Get the current NMS handler instance, or try to load it if missing. */
