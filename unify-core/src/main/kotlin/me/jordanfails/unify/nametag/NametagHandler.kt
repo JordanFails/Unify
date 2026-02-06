@@ -127,16 +127,21 @@ object NametagHandler {
             teamInfoMap = teamMap[refreshFor.uniqueId]!!
         }
 
-        if (provided.prefix.length > 16) {
-            provided.prefix = provided.prefix.substring(0, 16)
+        // Get dynamic limits from NMS handler
+        val nms = UnifyCore.instance.nms
+        val prefixLimit = nms?.getTeamPrefixLimit() ?: 16
+        val nameLimit = 16 // Team names always have 16 char limit
+        
+        if (provided.prefix.length > prefixLimit) {
+            provided.prefix = provided.prefix.substring(0, prefixLimit)
         }
 
-        if (provided.name.length > 16) {
-            provided.name = provided.name.substring(0, 16)
+        if (provided.name.length > nameLimit) {
+            provided.name = provided.name.substring(0, nameLimit)
         }
 
-        if (provided.suffix.length > 16) {
-            provided.suffix = provided.suffix.substring(0, 16)
+        if (provided.suffix.length > prefixLimit) {
+            provided.suffix = provided.suffix.substring(0, prefixLimit)
         }
 
         ScoreboardTeamPacketMod(provided.name, provided.prefix, provided.suffix, arrayListOf(toRefresh.name), 0).send(refreshFor)

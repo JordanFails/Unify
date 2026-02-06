@@ -1,5 +1,7 @@
 package me.jordanfails.unify.nms
 
+import me.jordanfails.unify.bossbar.UnifyBossBar
+import me.jordanfails.unify.hologram.UnifyHologram
 import org.bukkit.entity.Player
 import org.bukkit.inventory.Inventory
 import org.bukkit.inventory.ItemStack
@@ -58,4 +60,51 @@ interface NMSHandler {
      * @param suffix Suffix to display after the player's name
      */
     fun sendNametagPacket(viewer: Player, target: Player, teamName: String, prefix: String, suffix: String)
+    
+    // --- Scoreboard Limits ---
+    /**
+     * Returns the maximum character limit for scoreboard lines.
+     * - 1.8-1.12: 32 characters (16 prefix + 16 suffix)
+     * - 1.13+: 32767 characters (protocol max, components)
+     */
+    fun getScoreboardLineLimit(): Int
+    
+    /**
+     * Returns the maximum character limit for team prefix/suffix.
+     * - 1.8-1.12: 16 characters
+     * - 1.13+: 32767 characters (protocol max, components)
+     */
+    fun getTeamPrefixLimit(): Int
+    
+    // --- BossBar API ---
+    /**
+     * Show a boss bar to a player.
+     */
+    fun showBossBar(player: Player, bossBar: UnifyBossBar)
+    
+    /**
+     * Hide a boss bar from a player.
+     */
+    fun hideBossBar(player: Player, bossBar: UnifyBossBar)
+    
+    /**
+     * Update a boss bar for a player (title, progress, color, style).
+     */
+    fun updateBossBar(player: Player, bossBar: UnifyBossBar)
+    
+    // --- Hologram API ---
+    /**
+     * Show a hologram to a player.
+     */
+    fun showHologram(player: Player, hologram: UnifyHologram)
+    
+    /**
+     * Hide a hologram from a player.
+     */
+    fun hideHologram(player: Player, hologram: UnifyHologram)
+    
+    /**
+     * Update a hologram for a player (text, lines, location).
+     */
+    fun updateHologram(player: Player, hologram: UnifyHologram)
 }

@@ -1,28 +1,39 @@
 package me.jordanfails.unify.nms.v1_20_R4
 
+import me.jordanfails.unify.bossbar.BossBarColor
+import me.jordanfails.unify.bossbar.BossBarStyle
+import me.jordanfails.unify.bossbar.UnifyBossBar
+import me.jordanfails.unify.hologram.HologramLine
+import me.jordanfails.unify.hologram.UnifyHologram
 import me.jordanfails.unify.nms.NMSHandler
+import net.minecraft.ChatFormatting
+import net.minecraft.network.chat.Component
+import net.minecraft.network.protocol.game.ClientboundAddEntityPacket
+import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket
+import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket
+import net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket
+import net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket
+import net.minecraft.world.entity.decoration.ArmorStand
+import net.minecraft.world.entity.item.ItemEntity
+import net.minecraft.world.scores.PlayerTeam
+import net.minecraft.world.scores.Scoreboard
+import net.minecraft.world.scores.Team
 import org.bukkit.Bukkit
 import org.bukkit.block.BlockState
+import org.bukkit.boss.BarColor
+import org.bukkit.boss.BarStyle
+import org.bukkit.boss.BossBar
+import org.bukkit.craftbukkit.CraftWorld
+import org.bukkit.craftbukkit.entity.CraftPlayer
+import org.bukkit.craftbukkit.inventory.CraftItemStack
 import org.bukkit.entity.Player
 import org.bukkit.inventory.Inventory
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.meta.Damageable
+import java.util.UUID
 
 @Suppress("unused")
 class NMSHandler_v1_20_R4 : NMSHandler {
-    
-    // Reflection cache
-    private val craftPlayerClass: Class<*>? = try { Class.forName("org.bukkit.craftbukkit.entity.CraftPlayer") } catch (e: Exception) { null }
-    private val serverPlayerClass: Class<*>? = try { Class.forName("net.minecraft.server.level.ServerPlayer") } catch (e: Exception) { null }
-    private val connectionClass: Class<*>? = try { Class.forName("net.minecraft.server.network.ServerGamePacketListenerImpl") } catch (e: Exception) { null }
-    private val packetClass: Class<*>? = try { Class.forName("net.minecraft.network.protocol.Packet") } catch (e: Exception) { null }
-    private val teamPacketClass: Class<*>? = try { Class.forName("net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket") } catch (e: Exception) { null }
-    private val playerTeamClass: Class<*>? = try { Class.forName("net.minecraft.world.scores.PlayerTeam") } catch (e: Exception) { null }
-    private val scoreboardClass: Class<*>? = try { Class.forName("net.minecraft.world.scores.Scoreboard") } catch (e: Exception) { null }
-    private val componentClass: Class<*>? = try { Class.forName("net.minecraft.network.chat.Component") } catch (e: Exception) { null }
-    private val chatFormattingClass: Class<*>? = try { Class.forName("net.minecraft.ChatFormatting") } catch (e: Exception) { null }
-    private val teamVisibilityClass: Class<*>? = try { Class.forName("net.minecraft.world.scores.Team\$Visibility") } catch (e: Exception) { null }
-    private val teamCollisionClass: Class<*>? = try { Class.forName("net.minecraft.world.scores.Team\$CollisionRule") } catch (e: Exception) { null }
     
     override fun sendTitle(
         player: Player,
@@ -99,42 +110,36 @@ class NMSHandler_v1_20_R4 : NMSHandler {
     }
 
     override fun sendHideNametagPacket(viewer: Player, target: Player) {
-        sendTeamPacket(viewer, target, getTeamName(target), "", "", "never")
+        sendTeamPacket(viewer, target, getTeamName(target), "", "", Team.Visibility.NEVER)
     }
 
     override fun sendShowNametagPacket(viewer: Player, target: Player) {
-        sendTeamPacket(viewer, target, getTeamName(target), "", "", "always")
+        sendTeamPacket(viewer, target, getTeamName(target), "", "", Team.Visibility.ALWAYS)
     }
 
     override fun sendRemoveNametagTeamPacket(viewer: Player, target: Player) {
-        try {
-            sendTeamRemovePacket(viewer, getTeamName(target))
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        sendTeamRemovePacket(viewer, getTeamName(target))
     }
     
     override fun sendNametagPacket(viewer: Player, target: Player, teamName: String, prefix: String, suffix: String) {
-        sendTeamPacket(viewer, target, teamName.take(16), prefix, suffix, "always")
+        sendTeamPacket(viewer, target, teamName.take(16), prefix, suffix, Team.Visibility.ALWAYS)
     }
     
-    private fun sendTeamPacket(viewer: Player, target: Player, teamName: String, prefix: String, suffix: String, visibility: String) {
+    private fun sendTeamPacket(viewer: Player, target: Player, teamName: String, prefix: String, suffix: String, visibility: Team.Visibility) {
         try {
-            val scoreboard = scoreboardClass?.getDeclaredConstructor()?.newInstance() ?: return
-            val teamConstructor = playerTeamClass?.getConstructor(scoreboardClass, String::class.java) ?: return
-            val team = teamConstructor.newInstance(scoreboard, teamName)
+            val scoreboard = Scoreboard()
+            val team = PlayerTeam(scoreboard, teamName)
             
-            setTeamDisplayName(team, teamName)
-            setTeamPrefix(team, prefix)
-            setTeamSuffix(team, suffix)
-            setTeamColor(team, prefix)
-            setTeamVisibility(team, visibility)
-            setTeamCollision(team, "never")
-            addPlayerToTeam(team, target.name)
+            team.displayName = Component.literal(teamName)
+            team.playerPrefix = Component.literal(prefix)
+            team.playerSuffix = Component.literal(suffix)
+            team.color = getChatFormatting(extractColorCode(prefix))
+            team.nameTagVisibility = visibility
+            team.collisionRule = Team.CollisionRule.NEVER
+            team.players.add(target.name)
             
-            val packet = createTeamPacket(team, 0) ?: return
-            sendPacket(viewer, packet)
-            
+            val packet = ClientboundSetPlayerTeamPacket.createAddOrModifyPacket(team, true)
+            (viewer as CraftPlayer).handle.connection.send(packet)
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -142,100 +147,13 @@ class NMSHandler_v1_20_R4 : NMSHandler {
     
     private fun sendTeamRemovePacket(viewer: Player, teamName: String) {
         try {
-            val scoreboard = scoreboardClass?.getDeclaredConstructor()?.newInstance() ?: return
-            val teamConstructor = playerTeamClass?.getConstructor(scoreboardClass, String::class.java) ?: return
-            val team = teamConstructor.newInstance(scoreboard, teamName)
+            val scoreboard = Scoreboard()
+            val team = PlayerTeam(scoreboard, teamName)
             
-            val packet = createTeamPacket(team, 1) ?: return
-            sendPacket(viewer, packet)
+            val packet = ClientboundSetPlayerTeamPacket.createRemovePacket(team)
+            (viewer as CraftPlayer).handle.connection.send(packet)
         } catch (e: Exception) {
             e.printStackTrace()
-        }
-    }
-    
-    private fun setTeamDisplayName(team: Any, name: String) {
-        try {
-            val component = createComponent(name)
-            val method = playerTeamClass?.getMethod("setDisplayName", componentClass) ?: return
-            method.invoke(team, component)
-        } catch (_: Exception) { }
-    }
-    
-    private fun setTeamPrefix(team: Any, prefix: String) {
-        try {
-            val component = createComponent(prefix)
-            val method = playerTeamClass?.getMethod("setPlayerPrefix", componentClass) ?: return
-            method.invoke(team, component)
-        } catch (_: Exception) { }
-    }
-    
-    private fun setTeamSuffix(team: Any, suffix: String) {
-        try {
-            val component = createComponent(suffix)
-            val method = playerTeamClass?.getMethod("setPlayerSuffix", componentClass) ?: return
-            method.invoke(team, component)
-        } catch (_: Exception) { }
-    }
-    
-    private fun setTeamColor(team: Any, prefix: String) {
-        try {
-            val colorCode = extractColorCode(prefix)
-            val chatFormatting = getChatFormatting(colorCode) ?: return
-            val method = playerTeamClass?.getMethod("setColor", chatFormattingClass) ?: return
-            method.invoke(team, chatFormatting)
-        } catch (_: Exception) { }
-    }
-    
-    private fun setTeamVisibility(team: Any, visibility: String) {
-        try {
-            val visibilityEnum = getVisibilityEnum(visibility) ?: return
-            val method = playerTeamClass?.getMethod("setNameTagVisibility", teamVisibilityClass) ?: return
-            method.invoke(team, visibilityEnum)
-        } catch (_: Exception) { }
-    }
-    
-    private fun setTeamCollision(team: Any, collision: String) {
-        try {
-            val collisionEnum = getCollisionEnum(collision) ?: return
-            val method = playerTeamClass?.getMethod("setCollisionRule", teamCollisionClass) ?: return
-            method.invoke(team, collisionEnum)
-        } catch (_: Exception) { }
-    }
-    
-    private fun addPlayerToTeam(team: Any, playerName: String) {
-        try {
-            val getPlayersMethod = playerTeamClass?.getMethod("getPlayers") ?: return
-            @Suppress("UNCHECKED_CAST")
-            val players = getPlayersMethod.invoke(team) as MutableCollection<String>
-            players.add(playerName)
-        } catch (_: Exception) { }
-    }
-    
-    private fun createTeamPacket(team: Any, mode: Int): Any? {
-        return try {
-            when (mode) {
-                0 -> {
-                    val method = teamPacketClass?.getMethod("createAddOrModifyPacket", playerTeamClass, Boolean::class.java)
-                    method?.invoke(null, team, true)
-                }
-                1 -> {
-                    val method = teamPacketClass?.getMethod("createRemovePacket", playerTeamClass)
-                    method?.invoke(null, team)
-                }
-                else -> null
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
-    }
-    
-    private fun createComponent(text: String): Any? {
-        return try {
-            val literalMethod = componentClass?.getMethod("literal", String::class.java)
-            literalMethod?.invoke(null, text)
-        } catch (e: Exception) {
-            null
         }
     }
     
@@ -249,69 +167,221 @@ class NMSHandler_v1_20_R4 : NMSHandler {
         return 'f'
     }
     
-    private fun getChatFormatting(colorCode: Char): Any? {
-        val colorMap = mapOf(
-            '0' to "BLACK", '1' to "DARK_BLUE", '2' to "DARK_GREEN", '3' to "DARK_AQUA",
-            '4' to "DARK_RED", '5' to "DARK_PURPLE", '6' to "GOLD", '7' to "GRAY",
-            '8' to "DARK_GRAY", '9' to "BLUE", 'a' to "GREEN", 'b' to "AQUA",
-            'c' to "RED", 'd' to "LIGHT_PURPLE", 'e' to "YELLOW", 'f' to "WHITE"
-        )
-        val enumName = colorMap[colorCode] ?: "WHITE"
-        return try {
-            val enumConstants = chatFormattingClass?.enumConstants ?: return null
-            enumConstants.firstOrNull { (it as Enum<*>).name == enumName }
-        } catch (e: Exception) {
-            null
+    private fun getChatFormatting(colorCode: Char): ChatFormatting {
+        return when (colorCode) {
+            '0' -> ChatFormatting.BLACK
+            '1' -> ChatFormatting.DARK_BLUE
+            '2' -> ChatFormatting.DARK_GREEN
+            '3' -> ChatFormatting.DARK_AQUA
+            '4' -> ChatFormatting.DARK_RED
+            '5' -> ChatFormatting.DARK_PURPLE
+            '6' -> ChatFormatting.GOLD
+            '7' -> ChatFormatting.GRAY
+            '8' -> ChatFormatting.DARK_GRAY
+            '9' -> ChatFormatting.BLUE
+            'a' -> ChatFormatting.GREEN
+            'b' -> ChatFormatting.AQUA
+            'c' -> ChatFormatting.RED
+            'd' -> ChatFormatting.LIGHT_PURPLE
+            'e' -> ChatFormatting.YELLOW
+            'f' -> ChatFormatting.WHITE
+            else -> ChatFormatting.WHITE
         }
     }
     
-    private fun getVisibilityEnum(visibility: String): Any? {
-        val enumName = when (visibility.lowercase()) {
-            "always" -> "ALWAYS"
-            "never" -> "NEVER"
-            "hideforotherteams" -> "HIDE_FOR_OTHER_TEAMS"
-            "hideforownteam" -> "HIDE_FOR_OWN_TEAM"
-            else -> "ALWAYS"
-        }
-        return try {
-            val enumConstants = teamVisibilityClass?.enumConstants ?: return null
-            enumConstants.firstOrNull { (it as Enum<*>).name == enumName }
-        } catch (e: Exception) {
-            null
+    // 1.20+ uses components - effectively unlimited (32767 is protocol max)
+    override fun getScoreboardLineLimit(): Int = 32767
+    override fun getTeamPrefixLimit(): Int = 32767
+    
+    // --- BossBar Implementation (uses Bukkit API for 1.9+) ---
+    private val playerBossBars = mutableMapOf<UUID, MutableMap<UUID, BossBar>>()
+    
+    override fun showBossBar(player: Player, bossBar: UnifyBossBar) {
+        val bukkitBar = createBukkitBossBar(bossBar)
+        bukkitBar.addPlayer(player)
+        playerBossBars.getOrPut(player.uniqueId) { mutableMapOf() }[bossBar.uuid] = bukkitBar
+    }
+    
+    override fun hideBossBar(player: Player, bossBar: UnifyBossBar) {
+        val bars = playerBossBars[player.uniqueId] ?: return
+        val bukkitBar = bars.remove(bossBar.uuid) ?: return
+        bukkitBar.removePlayer(player)
+    }
+    
+    override fun updateBossBar(player: Player, bossBar: UnifyBossBar) {
+        val bars = playerBossBars[player.uniqueId] ?: return
+        val bukkitBar = bars[bossBar.uuid] ?: return
+        bukkitBar.setTitle(bossBar.title)
+        bukkitBar.progress = bossBar.progress
+        bukkitBar.color = toBukkitColor(bossBar.color)
+        bukkitBar.style = toBukkitStyle(bossBar.style)
+    }
+    
+    private fun createBukkitBossBar(bossBar: UnifyBossBar): BossBar {
+        return Bukkit.createBossBar(bossBar.title, toBukkitColor(bossBar.color), toBukkitStyle(bossBar.style)).apply {
+            progress = bossBar.progress
         }
     }
     
-    private fun getCollisionEnum(collision: String): Any? {
-        val enumName = when (collision.lowercase()) {
-            "always" -> "ALWAYS"
-            "never" -> "NEVER"
-            "pushownteam" -> "PUSH_OWN_TEAM"
-            "pushotherteams" -> "PUSH_OTHER_TEAMS"
-            else -> "ALWAYS"
-        }
-        return try {
-            val enumConstants = teamCollisionClass?.enumConstants ?: return null
-            enumConstants.firstOrNull { (it as Enum<*>).name == enumName }
-        } catch (e: Exception) {
-            null
+    private fun toBukkitColor(color: BossBarColor): BarColor {
+        return when (color) {
+            BossBarColor.PINK -> BarColor.PINK
+            BossBarColor.BLUE -> BarColor.BLUE
+            BossBarColor.RED -> BarColor.RED
+            BossBarColor.GREEN -> BarColor.GREEN
+            BossBarColor.YELLOW -> BarColor.YELLOW
+            BossBarColor.PURPLE -> BarColor.PURPLE
+            BossBarColor.WHITE -> BarColor.WHITE
         }
     }
     
-    private fun sendPacket(player: Player, packet: Any) {
+    private fun toBukkitStyle(style: BossBarStyle): BarStyle {
+        return when (style) {
+            BossBarStyle.SOLID -> BarStyle.SOLID
+            BossBarStyle.SEGMENTED_6 -> BarStyle.SEGMENTED_6
+            BossBarStyle.SEGMENTED_10 -> BarStyle.SEGMENTED_10
+            BossBarStyle.SEGMENTED_12 -> BarStyle.SEGMENTED_12
+            BossBarStyle.SEGMENTED_20 -> BarStyle.SEGMENTED_20
+        }
+    }
+    
+    // --- Hologram Implementation (1.20 uses NMS ArmorStands) ---
+    private val playerHologramEntities = mutableMapOf<UUID, MutableMap<UUID, List<Int>>>()
+    private var entityIdCounter = 1000000
+    
+    override fun showHologram(player: Player, hologram: UnifyHologram) {
+        spawnHologram(player, hologram)
+    }
+    
+    override fun hideHologram(player: Player, hologram: UnifyHologram) {
+        val entityIds = playerHologramEntities[player.uniqueId]?.remove(hologram.uuid) ?: return
+        if (entityIds.isNotEmpty()) {
+            val removePacket = ClientboundRemoveEntitiesPacket(*entityIds.toIntArray())
+            (player as CraftPlayer).handle.connection.send(removePacket)
+        }
+    }
+    
+    override fun updateHologram(player: Player, hologram: UnifyHologram) {
+        val currentIds = playerHologramEntities[player.uniqueId]?.get(hologram.uuid)
+        if (currentIds != null && currentIds.size == hologram.lines.size) {
+            updateHologramLines(player, hologram, currentIds)
+        } else {
+            hideHologram(player, hologram)
+            spawnHologram(player, hologram)
+        }
+    }
+    
+    private fun spawnHologram(player: Player, hologram: UnifyHologram) {
         try {
-            val craftPlayer = craftPlayerClass?.cast(player) ?: return
-            val getHandle = craftPlayerClass?.getMethod("getHandle")
-            val serverPlayer = getHandle?.invoke(craftPlayer) ?: return
+            val lines = hologram.lines
+            val entityIds = mutableListOf<Int>()
+            var currentY = hologram.location.y
             
-            val connectionField = serverPlayerClass?.getField("connection") ?: 
-                                  serverPlayerClass?.getDeclaredField("connection")?.apply { isAccessible = true }
-            val connection = connectionField?.get(serverPlayer) ?: return
+            val world = (player.world as CraftWorld).handle
+            val connection = (player as CraftPlayer).handle.connection
             
-            val sendMethod = connectionClass?.getMethod("send", packetClass)
-                ?: connectionClass?.getMethod("sendPacket", packetClass)
-            sendMethod?.invoke(connection, packet)
+            for (line in lines) {
+                val entityId = entityIdCounter++
+                entityIds.add(entityId)
+                
+                when (line) {
+                    is HologramLine.Text -> {
+                        val armorStand = ArmorStand(world, hologram.location.x, currentY, hologram.location.z)
+                        armorStand.id = entityId
+                        armorStand.customName = Component.literal(line.text)
+                        armorStand.isCustomNameVisible = true
+                        armorStand.isInvisible = true
+                        armorStand.isNoGravity = true
+                        armorStand.isSmall = true
+                        armorStand.isMarker = true
+                        
+                        val addPacket = ClientboundAddEntityPacket(armorStand)
+                        connection.send(addPacket)
+                        
+                        val dataValues = armorStand.entityData.packAll()
+                        if (dataValues != null) {
+                            val metaPacket = ClientboundSetEntityDataPacket(entityId, dataValues)
+                            connection.send(metaPacket)
+                        }
+                        currentY -= 0.25
+                    }
+                    is HologramLine.Item -> {
+                        val nmsItem = CraftItemStack.asNMSCopy(line.itemStack)
+                        val itemEntity = ItemEntity(world, hologram.location.x, currentY, hologram.location.z, nmsItem)
+                        itemEntity.id = entityId
+                        itemEntity.setNoGravity(true)
+                        itemEntity.setNeverPickUp()
+                        
+                        val addPacket = ClientboundAddEntityPacket(itemEntity)
+                        connection.send(addPacket)
+                        
+                        val dataValues = itemEntity.entityData.packAll()
+                        if (dataValues != null) {
+                            val metaPacket = ClientboundSetEntityDataPacket(entityId, dataValues)
+                            connection.send(metaPacket)
+                        }
+                        currentY -= 0.5
+                    }
+                }
+            }
+            playerHologramEntities.getOrPut(player.uniqueId) { mutableMapOf() }[hologram.uuid] = entityIds
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+    }
+    
+    private fun updateHologramLines(player: Player, hologram: UnifyHologram, entityIds: List<Int>) {
+        try {
+            val lines = hologram.lines
+            var currentY = hologram.location.y
+            val world = (player.world as CraftWorld).handle
+            val connection = (player as CraftPlayer).handle.connection
+            
+            for (i in lines.indices) {
+                val entityId = entityIds[i]
+                val line = lines[i]
+                
+                when (line) {
+                    is HologramLine.Text -> {
+                        val armorStand = ArmorStand(world, hologram.location.x, currentY, hologram.location.z)
+                        armorStand.id = entityId
+                        armorStand.customName = Component.literal(line.text)
+                        armorStand.isCustomNameVisible = true
+                        armorStand.isInvisible = true
+                        armorStand.isMarker = true
+                        
+                        val dataValues = armorStand.entityData.packAll()
+                        if (dataValues != null) {
+                            val metaPacket = ClientboundSetEntityDataPacket(entityId, dataValues)
+                            connection.send(metaPacket)
+                        }
+                        
+                        val teleportPacket = ClientboundTeleportEntityPacket(armorStand)
+                        connection.send(teleportPacket)
+                        currentY -= 0.25
+                    }
+                    is HologramLine.Item -> {
+                        val nmsItem = CraftItemStack.asNMSCopy(line.itemStack)
+                        val itemEntity = ItemEntity(world, hologram.location.x, currentY, hologram.location.z, nmsItem)
+                        itemEntity.id = entityId
+                        itemEntity.setNoGravity(true)
+                        
+                        val dataValues = itemEntity.entityData.packAll()
+                        if (dataValues != null) {
+                            val metaPacket = ClientboundSetEntityDataPacket(entityId, dataValues)
+                            connection.send(metaPacket)
+                        }
+                        
+                        val teleportPacket = ClientboundTeleportEntityPacket(itemEntity)
+                        connection.send(teleportPacket)
+                        currentY -= 0.5
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            hideHologram(player, hologram)
+            spawnHologram(player, hologram)
         }
     }
 }

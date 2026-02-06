@@ -8,7 +8,12 @@ import me.jordanfails.unify.nametag.NametagListener
 import me.jordanfails.unify.nms.NMSHandler
 import me.jordanfails.unify.nms.NMSHandlerFactory
 import me.jordanfails.unify.menu.tasks.MenuAutoUpdater
+import co.aikar.commands.PaperCommandManager
+import me.jordanfails.unify.hologram.HologramManager
+import me.jordanfails.unify.hologram.command.HologramCommand
+import me.jordanfails.unify.visibility.VisibilityHandler
 import me.jordanfails.unify.visibility.VisibilityListeners
+import me.jordanfails.unify.visibility.VanishVisibilityAdapter
 import org.bukkit.plugin.java.JavaPlugin
 
 class UnifyCore : JavaPlugin() {
@@ -26,12 +31,16 @@ class UnifyCore : JavaPlugin() {
         setupVisibility()
         setupNametags()
         setupMenu()
+        setupHolograms()
+        setupCommands()
     }
 
     override fun onDisable() {
+        HologramManager.disable()
     }
 
     private fun setupVisibility() {
+        VisibilityHandler.registerAdapter("vanish", VanishVisibilityAdapter)
         listOf(
             VisibilityListeners,
         ).forEach { listener -> this.server.pluginManager.registerEvents(listener, this) }
@@ -51,5 +60,14 @@ class UnifyCore : JavaPlugin() {
             SelectItemListeners,
             ButtonListeners
         ).forEach { listener -> this.server.pluginManager.registerEvents(listener, this) }
+    }
+
+    private fun setupCommands() {
+        val commandManager = PaperCommandManager(this)
+        commandManager.registerCommand(HologramCommand())
+    }
+
+    private fun setupHolograms() {
+        HologramManager.enable(this)
     }
 }

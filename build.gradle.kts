@@ -1,8 +1,12 @@
 plugins {
     // declare plugin ids using full form (not kotlin("..."))
-    id("org.jetbrains.kotlin.jvm") version "1.9.22" apply false
+    id("org.jetbrains.kotlin.jvm") version "2.2.0" apply false
     id("com.github.johnrengelman.shadow") version "8.1.1" apply false
+    id("maven-publish")
 }
+
+group = "me.jordanfails"
+version = "1.0-SNAPSHOT"
 
 subprojects {
     // apply kotlin plugin properly
@@ -50,7 +54,7 @@ tasks.register("buildModern") {
 }
 
 // Legacy bundled plugin (Java 8 - for 1.8 to 1.16 servers)
-tasks.register<Jar>("bundledLegacy") {
+val bundledLegacyTask = tasks.register<Jar>("bundledLegacy") {
     group = "build"
     description = "Creates the legacy Unify plugin JAR (Java 8 - for 1.8 to 1.16 servers)"
     
@@ -59,8 +63,8 @@ tasks.register<Jar>("bundledLegacy") {
     
     archiveBaseName.set("Unify")
     archiveVersion.set("1.0-SNAPSHOT")
-    archiveClassifier.set("legacy")
-    destinationDirectory.set(layout.buildDirectory.dir("libs"))
+    archiveClassifier.set("")
+    destinationDirectory.set(layout.buildDirectory.dir("libs/legacy"))
     
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     
@@ -72,7 +76,7 @@ tasks.register<Jar>("bundledLegacy") {
 }
 
 // Modern bundled plugin (Java 17+ - for 1.17+ servers)
-tasks.register<Jar>("bundledModern") {
+val bundledModernTask = tasks.register<Jar>("bundledModern") {
     group = "build"
     description = "Creates the modern Unify plugin JAR (Java 17+ - for 1.17+ servers)"
     
@@ -81,8 +85,8 @@ tasks.register<Jar>("bundledModern") {
     
     archiveBaseName.set("Unify")
     archiveVersion.set("1.0-SNAPSHOT")
-    archiveClassifier.set("modern")
-    destinationDirectory.set(layout.buildDirectory.dir("libs"))
+    archiveClassifier.set("")
+    destinationDirectory.set(layout.buildDirectory.dir("libs/modern"))
     
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     
@@ -92,10 +96,32 @@ tasks.register<Jar>("bundledModern") {
     from({ if (nms_v1_21_R1.exists()) zipTree(nms_v1_21_R1) else emptyList<Any>() })
 }
 
-// Build both versions
+// Publishing configuration
+publishing {
+    publications {
+        create<MavenPublication>("legacy") {
+            groupId = "me.jordanfails"
+            artifactId = "unify-legacy"
+            version = "1.0-SNAPSHOT"
+            artifact(bundledLegacyTask)
+        }
+        create<MavenPublication>("modern") {
+            groupId = "me.jordanfails"
+            artifactId = "unify-modern"
+            version = "1.0-SNAPSHOT"
+            artifact(bundledModernTask)
+        }
+    }
+    repositories {
+        mavenLocal()
+    }
+}
+
+// Build both versions and publish to maven local
 tasks.register("bundledAll") {
     group = "build"
-    description = "Build both legacy and modern bundled plugins"
+    description = "Build both legacy and modern bundled plugins and publish to Maven Local"
     dependsOn("bundledLegacy")
     dependsOn("bundledModern")
+    finalizedBy("publishToMavenLocal")
 }

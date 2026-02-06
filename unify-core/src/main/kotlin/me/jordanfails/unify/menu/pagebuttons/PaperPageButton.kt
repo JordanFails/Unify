@@ -1,6 +1,6 @@
 package me.jordanfails.unify.menu.pagebuttons
 
-import me.jordanfails.ascendduels.utils.menu.pagination.PaginatedMenu
+import me.jordanfails.unify.menu.pagination.PaginatedMenu
 import me.jordanfails.unify.menu.Button
 import me.jordanfails.unify.menu.pagination.ViewAllPagesMenu
 import me.jordanfails.unify.utils.CC

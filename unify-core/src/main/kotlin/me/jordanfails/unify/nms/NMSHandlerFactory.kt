@@ -1,7 +1,7 @@
 package me.jordanfails.unify.nms
 
 import me.jordanfails.unify.UnifyCore
-import me.jordanfails.unify.nms.impl.NMSScoreboardTeam
+
 import me.jordanfails.unify.utils.CC
 import org.bukkit.Bukkit
 
@@ -11,7 +11,6 @@ import org.bukkit.Bukkit
 object NMSHandlerFactory {
 
     private var nmsHandler: NMSHandler? = null
-    private var scoreboardTeamHandler: NMSScoreboardTeam? = null
 
     /**
      * Maps Minecraft versions to NMS version strings.
@@ -89,30 +88,6 @@ object NMSHandlerFactory {
             val clazz = Class.forName(className)
             val instance = clazz.getDeclaredConstructor().newInstance() as NMSHandler
             nmsHandler = instance
-            UnifyCore.instance.logger.info("&a&l[Unify] &aLoaded NMS handler for &f&n$version&a.")
-            Bukkit.getLogger().info("&a&l[Unify] &aLoaded NMS handler for &f&n$version&a.")
-            instance
-        } catch (ex: Exception) {
-            Bukkit.getLogger().warning("&c&l[Unify] &cNo NMS handler found for version &f&n$version&c!")
-            Bukkit.getLogger().warning("&c&l[Unify] Error: ${ex.message}")
-            null
-        }
-    }
-
-    fun getScoreboardTeamHandler(): NMSScoreboardTeam? {
-        if (scoreboardTeamHandler != null) return scoreboardTeamHandler
-
-        val version = detectNMSVersion()
-        if (version == null) {
-            Bukkit.getLogger().warning("&e&l[Unify] &eCould not detect server version")
-            return null
-        }
-
-        val className = "me.jordanfails.unify.nms.$version.ScoreboardTeamHandler_${version}"
-        return try {
-            val clazz = Class.forName(className)
-            val instance = clazz.getDeclaredConstructor().newInstance() as NMSScoreboardTeam
-            scoreboardTeamHandler = instance
             UnifyCore.instance.logger.info("&a&l[Unify] &aLoaded NMS handler for &f&n$version&a.")
             Bukkit.getLogger().info("&a&l[Unify] &aLoaded NMS handler for &f&n$version&a.")
             instance

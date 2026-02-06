@@ -1,20 +1,27 @@
 package me.jordanfails.unify.nms.v1_9_R2
 
+import me.jordanfails.unify.UnifyCore
+import me.jordanfails.unify.bossbar.BossBarColor
+import me.jordanfails.unify.bossbar.BossBarStyle
+import me.jordanfails.unify.bossbar.UnifyBossBar
 import me.jordanfails.unify.exception.InvalidOutputException
+import me.jordanfails.unify.hologram.HologramLine
+import me.jordanfails.unify.hologram.UnifyHologram
 import me.jordanfails.unify.nms.NMSHandler
-import net.minecraft.server.v1_9_R2.ChatComponentText
-import net.minecraft.server.v1_9_R2.ContainerChest
-import net.minecraft.server.v1_9_R2.IInventory
-import net.minecraft.server.v1_9_R2.MinecraftServer
-import net.minecraft.server.v1_9_R2.PacketPlayOutOpenWindow
-import net.minecraft.server.v1_9_R2.PacketPlayOutScoreboardTeam
-import net.minecraft.server.v1_9_R2.PacketPlayOutTitle
+import net.minecraft.server.v1_9_R2.*
 import org.bukkit.Bukkit
+import org.bukkit.boss.BarColor
+import org.bukkit.boss.BarStyle
+import org.bukkit.boss.BossBar
+import org.bukkit.craftbukkit.v1_9_R2.CraftWorld
 import org.bukkit.craftbukkit.v1_9_R2.entity.CraftPlayer
 import org.bukkit.craftbukkit.v1_9_R2.inventory.CraftInventory
+import org.bukkit.craftbukkit.v1_9_R2.inventory.CraftItemStack
 import org.bukkit.entity.Player
 import org.bukkit.inventory.Inventory
 import org.bukkit.inventory.ItemStack
+import java.util.UUID
+import kotlin.math.sin
 
 class NMSHandler_v1_9_R2 : NMSHandler {
 
@@ -209,5 +216,330 @@ class NMSHandler_v1_9_R2 : NMSHandler {
             field.isAccessible = true
             field.get(obj)
         } catch (_: Throwable) { null }
+    }
+    
+    // 1.9 has legacy limits
+    override fun getScoreboardLineLimit(): Int = 32
+    override fun getTeamPrefixLimit(): Int = 16
+    
+    // --- BossBar Implementation (uses Bukkit API for 1.9+) ---
+    private val playerBossBars = mutableMapOf<UUID, MutableMap<UUID, BossBar>>()
+    
+    override fun showBossBar(player: Player, bossBar: UnifyBossBar) {
+        val bukkitBar = createBukkitBossBar(bossBar)
+        bukkitBar.addPlayer(player)
+        playerBossBars.getOrPut(player.uniqueId) { mutableMapOf() }[bossBar.uuid] = bukkitBar
+    }
+    
+    override fun hideBossBar(player: Player, bossBar: UnifyBossBar) {
+        val bars = playerBossBars[player.uniqueId] ?: return
+        val bukkitBar = bars.remove(bossBar.uuid) ?: return
+        bukkitBar.removePlayer(player)
+    }
+    
+    override fun updateBossBar(player: Player, bossBar: UnifyBossBar) {
+        val bars = playerBossBars[player.uniqueId] ?: return
+        val bukkitBar = bars[bossBar.uuid] ?: return
+        bukkitBar.setTitle(bossBar.title)
+        bukkitBar.progress = bossBar.progress
+        bukkitBar.color = toBukkitColor(bossBar.color)
+        bukkitBar.style = toBukkitStyle(bossBar.style)
+    }
+    
+    private fun createBukkitBossBar(bossBar: UnifyBossBar): BossBar {
+        return Bukkit.createBossBar(bossBar.title, toBukkitColor(bossBar.color), toBukkitStyle(bossBar.style)).apply {
+            progress = bossBar.progress
+        }
+    }
+    
+    private fun toBukkitColor(color: BossBarColor): BarColor {
+        return when (color) {
+            BossBarColor.PINK -> BarColor.PINK
+            BossBarColor.BLUE -> BarColor.BLUE
+            BossBarColor.RED -> BarColor.RED
+            BossBarColor.GREEN -> BarColor.GREEN
+            BossBarColor.YELLOW -> BarColor.YELLOW
+            BossBarColor.PURPLE -> BarColor.PURPLE
+            BossBarColor.WHITE -> BarColor.WHITE
+        }
+    }
+    
+    private fun toBukkitStyle(style: BossBarStyle): BarStyle {
+        return when (style) {
+            BossBarStyle.SOLID -> BarStyle.SOLID
+            BossBarStyle.SEGMENTED_6 -> BarStyle.SEGMENTED_6
+            BossBarStyle.SEGMENTED_10 -> BarStyle.SEGMENTED_10
+            BossBarStyle.SEGMENTED_12 -> BarStyle.SEGMENTED_12
+            BossBarStyle.SEGMENTED_20 -> BarStyle.SEGMENTED_20
+        }
+    }
+    
+    // --- Hologram Implementation (1.9 uses ArmorStands) ---
+    private val playerHologramEntities = mutableMapOf<UUID, MutableMap<UUID, List<Int>>>()
+    private val playerAnimatedHologramEntities = mutableMapOf<UUID, MutableMap<UUID, List<AnimatedArmorStand>>>()
+    private var hologramAnimatorTaskId: Int? = null
+    private var hologramAnimatorTick: Long = 0L
+    private var entityIdCounter = 1000000
+
+    private data class AnimatedArmorStand(
+        val entityId: Int,
+        val x: Double,
+        val baseY: Double,
+        val z: Double,
+        val tickOffset: Int
+    )
+
+    private fun ensureHologramAnimatorRunning() {
+        if (hologramAnimatorTaskId != null) return
+        hologramAnimatorTaskId = Bukkit.getScheduler().runTaskTimer(
+            UnifyCore.instance,
+            Runnable { tickAnimatedHologramEntities() },
+            1L,
+            1L
+        ).taskId
+    }
+
+    private fun stopHologramAnimatorIfIdle() {
+        if (playerAnimatedHologramEntities.isNotEmpty()) return
+        val taskId = hologramAnimatorTaskId ?: return
+        Bukkit.getScheduler().cancelTask(taskId)
+        hologramAnimatorTaskId = null
+        hologramAnimatorTick = 0L
+    }
+
+    private fun tickAnimatedHologramEntities() {
+        hologramAnimatorTick++
+
+        val iterator = playerAnimatedHologramEntities.entries.iterator()
+        while (iterator.hasNext()) {
+            val (playerId, holograms) = iterator.next()
+            val player = Bukkit.getPlayer(playerId)
+            if (player == null || !player.isOnline) {
+                iterator.remove()
+                continue
+            }
+
+            if (holograms.isEmpty()) continue
+
+            val world = (player.world as CraftWorld).handle
+            val connection = (player as CraftPlayer).handle.playerConnection
+
+            for (animated in holograms.values) {
+                for (entry in animated) {
+                    val t = hologramAnimatorTick + entry.tickOffset
+                    val yaw = ((t * 10L) % 360L).toFloat()
+                    val y = entry.baseY + sin(t / 10.0) * 0.08
+
+                    val armorStand = EntityArmorStand(world)
+                    setEntityId(armorStand, entry.entityId)
+                    armorStand.isInvisible = true
+                    armorStand.setGravity(false)
+                    armorStand.setSmall(true)
+                    armorStand.setLocation(entry.x, y, entry.z, yaw, 0f)
+
+                    connection.sendPacket(PacketPlayOutEntityTeleport(armorStand))
+                }
+            }
+        }
+
+        // Clean up empty player entries
+        playerAnimatedHologramEntities.entries.removeIf { it.value.isEmpty() }
+        stopHologramAnimatorIfIdle()
+    }
+    
+    override fun showHologram(player: Player, hologram: UnifyHologram) {
+        spawnHologram(player, hologram)
+    }
+    
+    override fun hideHologram(player: Player, hologram: UnifyHologram) {
+        val entityIds = playerHologramEntities[player.uniqueId]?.remove(hologram.uuid) ?: return
+        playerAnimatedHologramEntities[player.uniqueId]?.remove(hologram.uuid)
+        playerAnimatedHologramEntities[player.uniqueId]?.let { if (it.isEmpty()) playerAnimatedHologramEntities.remove(player.uniqueId) }
+        stopHologramAnimatorIfIdle()
+        if (entityIds.isNotEmpty()) {
+            val destroyPacket = PacketPlayOutEntityDestroy(*entityIds.toIntArray())
+            (player as CraftPlayer).handle.playerConnection.sendPacket(destroyPacket)
+        }
+    }
+    
+    override fun updateHologram(player: Player, hologram: UnifyHologram) {
+        val currentIds = playerHologramEntities[player.uniqueId]?.get(hologram.uuid)
+        if (currentIds != null && currentIds.size == hologram.lines.size) {
+            updateHologramLines(player, hologram, currentIds)
+        } else {
+            hideHologram(player, hologram)
+            spawnHologram(player, hologram)
+        }
+    }
+    
+    private fun spawnHologram(player: Player, hologram: UnifyHologram) {
+        try {
+            val lines = hologram.lines
+            val entityIds = mutableListOf<Int>()
+            val animated = mutableListOf<AnimatedArmorStand>()
+            var currentY = hologram.location.y
+            
+            val world = (player.world as CraftWorld).handle
+            val connection = (player as CraftPlayer).handle.playerConnection
+            
+            for (line in lines) {
+                val entityId = entityIdCounter++
+                entityIds.add(entityId)
+                
+                val armorStand = EntityArmorStand(world)
+                setEntityId(armorStand, entityId)
+                armorStand.setGravity(false)
+                armorStand.isInvisible = true
+                
+                when (line) {
+                    is HologramLine.Text -> {
+                        armorStand.setLocation(hologram.location.x, currentY, hologram.location.z, 0f, 0f)
+                        armorStand.customName = line.text
+                        armorStand.customNameVisible = true
+                        armorStand.setSmall(true)
+                        armorStand.setMarker(true)
+                        
+                        val spawnPacket = PacketPlayOutSpawnEntityLiving(armorStand)
+                        connection.sendPacket(spawnPacket)
+                        
+                        val metaPacket = PacketPlayOutEntityMetadata(entityId, armorStand.dataWatcher, true)
+                        connection.sendPacket(metaPacket)
+                        currentY -= 0.25
+                    }
+                    is HologramLine.Item -> {
+                        // Small armor stand with item on head
+                        armorStand.setLocation(hologram.location.x, currentY - 0.6, hologram.location.z, 0f, 0f)
+                        armorStand.customNameVisible = false
+                        armorStand.setSmall(true)
+                        armorStand.setMarker(true)
+                        
+                        val spawnPacket = PacketPlayOutSpawnEntityLiving(armorStand)
+                        connection.sendPacket(spawnPacket)
+                        
+                        val metaPacket = PacketPlayOutEntityMetadata(entityId, armorStand.dataWatcher, true)
+                        connection.sendPacket(metaPacket)
+                        
+                        // Send equipment packet for helmet slot (EnumItemSlot.HEAD in 1.9)
+                        val nmsItem = CraftItemStack.asNMSCopy(line.itemStack)
+                        val equipPacket = PacketPlayOutEntityEquipment(entityId, EnumItemSlot.HEAD, nmsItem)
+                        connection.sendPacket(equipPacket)
+
+                        if (line.spin) {
+                            animated.add(
+                                AnimatedArmorStand(
+                                    entityId = entityId,
+                                    x = hologram.location.x,
+                                    baseY = currentY - 0.6,
+                                    z = hologram.location.z,
+                                    tickOffset = entityId and 0xFF
+                                )
+                            )
+                        }
+                        
+                        currentY -= 0.4
+                    }
+                }
+            }
+            playerHologramEntities.getOrPut(player.uniqueId) { mutableMapOf() }[hologram.uuid] = entityIds
+            if (animated.isNotEmpty()) {
+                playerAnimatedHologramEntities.getOrPut(player.uniqueId) { mutableMapOf() }[hologram.uuid] = animated
+                ensureHologramAnimatorRunning()
+            } else {
+                playerAnimatedHologramEntities[player.uniqueId]?.remove(hologram.uuid)
+                playerAnimatedHologramEntities[player.uniqueId]?.let { if (it.isEmpty()) playerAnimatedHologramEntities.remove(player.uniqueId) }
+                stopHologramAnimatorIfIdle()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+    
+    private fun updateHologramLines(player: Player, hologram: UnifyHologram, entityIds: List<Int>) {
+        try {
+            val lines = hologram.lines
+            val animated = mutableListOf<AnimatedArmorStand>()
+            var currentY = hologram.location.y
+            val world = (player.world as CraftWorld).handle
+            val connection = (player as CraftPlayer).handle.playerConnection
+            
+            for (i in lines.indices) {
+                val entityId = entityIds[i]
+                val line = lines[i]
+                
+                val armorStand = EntityArmorStand(world)
+                setEntityId(armorStand, entityId)
+                armorStand.isInvisible = true
+                armorStand.setGravity(false)
+                
+                when (line) {
+                    is HologramLine.Text -> {
+                        armorStand.setLocation(hologram.location.x, currentY, hologram.location.z, 0f, 0f)
+                        armorStand.customName = line.text
+                        armorStand.customNameVisible = true
+                        armorStand.setSmall(true)
+                        armorStand.isMarker = true
+                        
+                        val metaPacket = PacketPlayOutEntityMetadata(entityId, armorStand.dataWatcher, true)
+                        connection.sendPacket(metaPacket)
+                        
+                        val teleportPacket = PacketPlayOutEntityTeleport(armorStand)
+                        connection.sendPacket(teleportPacket)
+                        currentY -= 0.25
+                    }
+                    is HologramLine.Item -> {
+                        armorStand.setLocation(hologram.location.x, currentY - 0.6, hologram.location.z, 0f, 0f)
+                        armorStand.customNameVisible = false
+                        armorStand.setSmall(true)
+                        armorStand.isMarker = true
+                        
+                        val metaPacket = PacketPlayOutEntityMetadata(entityId, armorStand.dataWatcher, true)
+                        connection.sendPacket(metaPacket)
+                        
+                        val teleportPacket = PacketPlayOutEntityTeleport(armorStand)
+                        connection.sendPacket(teleportPacket)
+                        
+                        // Send equipment packet for helmet slot
+                        val nmsItem = CraftItemStack.asNMSCopy(line.itemStack)
+                        val equipPacket = PacketPlayOutEntityEquipment(entityId, EnumItemSlot.HEAD, nmsItem)
+                        connection.sendPacket(equipPacket)
+
+                        if (line.spin) {
+                            animated.add(
+                                AnimatedArmorStand(
+                                    entityId = entityId,
+                                    x = hologram.location.x,
+                                    baseY = currentY - 0.6,
+                                    z = hologram.location.z,
+                                    tickOffset = entityId and 0xFF
+                                )
+                            )
+                        }
+                        
+                        currentY -= 0.4
+                    }
+                }
+            }
+
+            if (animated.isNotEmpty()) {
+                playerAnimatedHologramEntities.getOrPut(player.uniqueId) { mutableMapOf() }[hologram.uuid] = animated
+                ensureHologramAnimatorRunning()
+            } else {
+                playerAnimatedHologramEntities[player.uniqueId]?.remove(hologram.uuid)
+                playerAnimatedHologramEntities[player.uniqueId]?.let { if (it.isEmpty()) playerAnimatedHologramEntities.remove(player.uniqueId) }
+                stopHologramAnimatorIfIdle()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            hideHologram(player, hologram)
+            spawnHologram(player, hologram)
+        }
+    }
+    
+    private fun setEntityId(entity: Entity, id: Int) {
+        try {
+            val field = Entity::class.java.getDeclaredField("id")
+            field.isAccessible = true
+            field.set(entity, id)
+        } catch (_: Throwable) {}
     }
 }

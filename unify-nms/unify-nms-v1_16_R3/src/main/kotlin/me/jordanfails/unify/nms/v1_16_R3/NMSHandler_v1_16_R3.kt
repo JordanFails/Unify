@@ -1,16 +1,26 @@
 package me.jordanfails.unify.nms.v1_16_R3
 
+import me.jordanfails.unify.bossbar.BossBarColor
+import me.jordanfails.unify.bossbar.BossBarStyle
+import me.jordanfails.unify.bossbar.UnifyBossBar
+import me.jordanfails.unify.hologram.HologramLine
+import me.jordanfails.unify.hologram.UnifyHologram
 import me.jordanfails.unify.nms.NMSHandler
-import net.minecraft.server.v1_16_R3.ChatComponentText
-import net.minecraft.server.v1_16_R3.MinecraftServer
-import net.minecraft.server.v1_16_R3.PacketPlayOutScoreboardTeam
+import net.minecraft.server.v1_16_R3.*
 import org.bukkit.Bukkit
 import org.bukkit.block.BlockState
+import org.bukkit.boss.BarColor
+import org.bukkit.boss.BarStyle
+import org.bukkit.boss.BossBar
+import org.bukkit.craftbukkit.v1_16_R3.CraftWorld
 import org.bukkit.craftbukkit.v1_16_R3.entity.CraftPlayer
+import org.bukkit.craftbukkit.v1_16_R3.inventory.CraftItemStack
+import org.bukkit.craftbukkit.v1_16_R3.util.CraftChatMessage
 import org.bukkit.entity.Player
 import org.bukkit.inventory.Inventory
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.meta.Damageable
+import java.util.UUID
 
 class NMSHandler_v1_16_R3 : NMSHandler {
     override fun sendTitle(
@@ -162,4 +172,188 @@ class NMSHandler_v1_16_R3 : NMSHandler {
             field.get(obj)
         } catch (_: Throwable) { null }
     }
+    
+    // 1.16+ uses components - effectively unlimited (32767 is protocol max)
+    override fun getScoreboardLineLimit(): Int = 32767
+    override fun getTeamPrefixLimit(): Int = 32767
+    
+    // --- BossBar Implementation (uses Bukkit API for 1.9+) ---
+    private val playerBossBars = mutableMapOf<UUID, MutableMap<UUID, BossBar>>()
+    
+    override fun showBossBar(player: Player, bossBar: UnifyBossBar) {
+        val bukkitBar = createBukkitBossBar(bossBar)
+        bukkitBar.addPlayer(player)
+        playerBossBars.getOrPut(player.uniqueId) { mutableMapOf() }[bossBar.uuid] = bukkitBar
+    }
+    
+    override fun hideBossBar(player: Player, bossBar: UnifyBossBar) {
+        val bars = playerBossBars[player.uniqueId] ?: return
+        val bukkitBar = bars.remove(bossBar.uuid) ?: return
+        bukkitBar.removePlayer(player)
+    }
+    
+    override fun updateBossBar(player: Player, bossBar: UnifyBossBar) {
+        val bars = playerBossBars[player.uniqueId] ?: return
+        val bukkitBar = bars[bossBar.uuid] ?: return
+        bukkitBar.setTitle(bossBar.title)
+        bukkitBar.progress = bossBar.progress
+        bukkitBar.color = toBukkitColor(bossBar.color)
+        bukkitBar.style = toBukkitStyle(bossBar.style)
+    }
+    
+    private fun createBukkitBossBar(bossBar: UnifyBossBar): BossBar {
+        return Bukkit.createBossBar(bossBar.title, toBukkitColor(bossBar.color), toBukkitStyle(bossBar.style)).apply {
+            progress = bossBar.progress
+        }
+    }
+    
+    private fun toBukkitColor(color: BossBarColor): BarColor {
+        return when (color) {
+            BossBarColor.PINK -> BarColor.PINK
+            BossBarColor.BLUE -> BarColor.BLUE
+            BossBarColor.RED -> BarColor.RED
+            BossBarColor.GREEN -> BarColor.GREEN
+            BossBarColor.YELLOW -> BarColor.YELLOW
+            BossBarColor.PURPLE -> BarColor.PURPLE
+            BossBarColor.WHITE -> BarColor.WHITE
+        }
+    }
+    
+    private fun toBukkitStyle(style: BossBarStyle): BarStyle {
+        return when (style) {
+            BossBarStyle.SOLID -> BarStyle.SOLID
+            BossBarStyle.SEGMENTED_6 -> BarStyle.SEGMENTED_6
+            BossBarStyle.SEGMENTED_10 -> BarStyle.SEGMENTED_10
+            BossBarStyle.SEGMENTED_12 -> BarStyle.SEGMENTED_12
+            BossBarStyle.SEGMENTED_20 -> BarStyle.SEGMENTED_20
+        }
+    }
+    
+    // --- Hologram Implementation (1.16 uses NMS ArmorStands) ---
+    private val playerHologramEntities = mutableMapOf<UUID, MutableMap<UUID, List<Int>>>()
+    private var entityIdCounter = 1000000
+    
+    override fun showHologram(player: Player, hologram: UnifyHologram) {
+        spawnHologram(player, hologram)
+    }
+    
+    override fun hideHologram(player: Player, hologram: UnifyHologram) {
+        val entityIds = playerHologramEntities[player.uniqueId]?.remove(hologram.uuid) ?: return
+        if (entityIds.isNotEmpty()) {
+            val destroyPacket = PacketPlayOutEntityDestroy(*entityIds.toIntArray())
+            (player as CraftPlayer).handle.playerConnection.sendPacket(destroyPacket)
+        }
+    }
+    
+    override fun updateHologram(player: Player, hologram: UnifyHologram) {
+        val currentIds = playerHologramEntities[player.uniqueId]?.get(hologram.uuid)
+        if (currentIds != null && currentIds.size == hologram.lines.size) {
+            updateHologramLines(player, hologram, currentIds)
+        } else {
+            hideHologram(player, hologram)
+            spawnHologram(player, hologram)
+        }
+    }
+    
+    private fun spawnHologram(player: Player, hologram: UnifyHologram) {
+        try {
+            val lines = hologram.lines
+            val entityIds = mutableListOf<Int>()
+            var currentY = hologram.location.y
+            
+            val world = (player.world as CraftWorld).handle
+            val connection = (player as CraftPlayer).handle.playerConnection
+            
+            for (line in lines) {
+                val entityId = entityIdCounter++
+                entityIds.add(entityId)
+                
+                when (line) {
+                    is HologramLine.Text -> {
+                        val armorStand = EntityArmorStand(world, hologram.location.x, currentY, hologram.location.z)
+                        armorStand.e(entityId)
+                        armorStand.customName = CraftChatMessage.fromStringOrNull(line.text)
+                        armorStand.customNameVisible = true
+                        armorStand.isInvisible = true
+                        armorStand.isNoGravity = true
+                        armorStand.isSmall = true
+                        armorStand.isMarker = true
+                        
+                        val spawnPacket = PacketPlayOutSpawnEntityLiving(armorStand)
+                        connection.sendPacket(spawnPacket)
+                        
+                        val metaPacket = PacketPlayOutEntityMetadata(entityId, armorStand.dataWatcher, true)
+                        connection.sendPacket(metaPacket)
+                        currentY -= 0.25
+                    }
+                    is HologramLine.Item -> {
+                        val nmsItem = CraftItemStack.asNMSCopy(line.itemStack)
+                        val itemEntity = EntityItem(world, hologram.location.x, currentY, hologram.location.z, nmsItem)
+                        itemEntity.e(entityId)
+                        itemEntity.setNoGravity(true)
+                        
+                        val spawnPacket = PacketPlayOutSpawnEntity(itemEntity)
+                        connection.sendPacket(spawnPacket)
+                        
+                        val metaPacket = PacketPlayOutEntityMetadata(entityId, itemEntity.dataWatcher, true)
+                        connection.sendPacket(metaPacket)
+                        currentY -= 0.5
+                    }
+                }
+            }
+            playerHologramEntities.getOrPut(player.uniqueId) { mutableMapOf() }[hologram.uuid] = entityIds
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+    
+    private fun updateHologramLines(player: Player, hologram: UnifyHologram, entityIds: List<Int>) {
+        try {
+            val lines = hologram.lines
+            var currentY = hologram.location.y
+            val world = (player.world as CraftWorld).handle
+            val connection = (player as CraftPlayer).handle.playerConnection
+            
+            for (i in lines.indices) {
+                val entityId = entityIds[i]
+                val line = lines[i]
+                
+                when (line) {
+                    is HologramLine.Text -> {
+                        val armorStand = EntityArmorStand(world, hologram.location.x, currentY, hologram.location.z)
+                        armorStand.e(entityId)
+                        armorStand.customName = CraftChatMessage.fromStringOrNull(line.text)
+                        armorStand.customNameVisible = true
+                        armorStand.isInvisible = true
+                        armorStand.isMarker = true
+                        
+                        val metaPacket = PacketPlayOutEntityMetadata(entityId, armorStand.dataWatcher, true)
+                        connection.sendPacket(metaPacket)
+                        
+                        val teleportPacket = PacketPlayOutEntityTeleport(armorStand)
+                        connection.sendPacket(teleportPacket)
+                        currentY -= 0.25
+                    }
+                    is HologramLine.Item -> {
+                        val nmsItem = CraftItemStack.asNMSCopy(line.itemStack)
+                        val itemEntity = EntityItem(world, hologram.location.x, currentY, hologram.location.z, nmsItem)
+                        itemEntity.e(entityId)
+                        itemEntity.setNoGravity(true)
+                        
+                        val metaPacket = PacketPlayOutEntityMetadata(entityId, itemEntity.dataWatcher, true)
+                        connection.sendPacket(metaPacket)
+                        
+                        val teleportPacket = PacketPlayOutEntityTeleport(itemEntity)
+                        connection.sendPacket(teleportPacket)
+                        currentY -= 0.5
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            hideHologram(player, hologram)
+            spawnHologram(player, hologram)
+        }
+    }
 }
+

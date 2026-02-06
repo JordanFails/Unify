@@ -1,7 +1,7 @@
 plugins {
     kotlin("jvm")
     id("com.gradleup.shadow") version "8.3.0"
-    id("xyz.jpenilla.run-paper") version "2.3.1"
+    id("io.papermc.paperweight.userdev") version "1.7.1"
 }
 
 group = "me.jordanfails"
@@ -12,17 +12,11 @@ repositories {
     maven("https://repo.papermc.io/repository/maven-public/") {
         name = "papermc-repo"
     }
-    maven("https://repo.codemc.io/repository/nms/") {
-        name = "codemc-nms-repo"
-    }
-    maven("https://maven.elmakers.com/repository") {
-        name = "elmakers"
-    }
 }
 
 dependencies {
     compileOnly(project(":unify-core"))
-    compileOnly("org.spigotmc:spigot:1.21.11-R0.1-SNAPSHOT")
+    paperweight.paperDevBundle("1.21.1-R0.1-SNAPSHOT")
 }
 
 kotlin {
@@ -31,5 +25,11 @@ kotlin {
 java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(21))
+    }
+}
+
+tasks {
+    assemble {
+        dependsOn(reobfJar)
     }
 }

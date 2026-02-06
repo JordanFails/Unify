@@ -2,7 +2,6 @@ package me.jordanfails.unify.menu.pagination
 
 import me.jordanfails.unify.menu.pagebuttons.ArrowPageButton
 import me.jordanfails.unify.menu.pagebuttons.PaperPageButton
-import me.jordanfails.ascendduels.utils.menu.pagination.PaginatedMenu
 import me.jordanfails.unify.menu.Button
 import me.jordanfails.unify.menu.menus.PageButtonType
 import me.jordanfails.unify.menu.pagebuttons.CarpetPageButton
@@ -13,7 +12,7 @@ import org.bukkit.entity.Player
 import kotlin.math.ceil
 
 /**
- * A bordered variant of [me.jordanfails.ascendduels.utils.menu.pagination.PaginatedMenu].
+ * A bordered variant of [PaginatedMenu].
  *
  * Automatically fills border slots with placeholder buttons
  * and provides paginated content in the inner area.

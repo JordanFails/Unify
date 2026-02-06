@@ -1,6 +1,5 @@
 package me.jordanfails.unify.menu.pagination
 
-import me.jordanfails.ascendduels.utils.menu.pagination.PaginatedMenu
 import me.jordanfails.unify.menu.Button
 import org.bukkit.Material
 import org.bukkit.event.inventory.ClickType

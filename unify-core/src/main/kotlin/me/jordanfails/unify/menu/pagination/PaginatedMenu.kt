@@ -1,4 +1,4 @@
-package me.jordanfails.ascendduels.utils.menu.pagination
+package me.jordanfails.unify.menu.pagination
 
 import me.jordanfails.unify.menu.pagebuttons.ArrowPageButton
 import me.jordanfails.unify.menu.pagebuttons.PaperPageButton
@@ -7,7 +7,6 @@ import me.jordanfails.unify.menu.Menu
 import me.jordanfails.unify.menu.menus.PageButtonType
 import me.jordanfails.unify.menu.pagebuttons.CarpetPageButton
 import me.jordanfails.unify.menu.pagebuttons.MelonPageButton
-import me.jordanfails.unify.menu.pagination.PageButton
 import org.bukkit.ChatColor
 import org.bukkit.entity.Player
 import java.util.HashMap

@@ -224,6 +224,10 @@ abstract class InteractiveMenu : Menu {
         // Store the item and trigger callback
         val oldItem = getSlotItem(slot)
         setSlotItem(slot, itemStack)
+        
+        // Actually place the item in the inventory visually
+        player.openInventory.topInventory.setItem(slot, itemStack.clone())
+        
         onSlotChange(player, slot, oldItem, itemStack)
         return true
     }
@@ -248,6 +252,10 @@ abstract class InteractiveMenu : Menu {
             if (currentItem == null || currentItem.type == Material.AIR) {
                 val oldItem = getSlotItem(slot)
                 setSlotItem(slot, itemStack)
+                
+                // Actually place the item in the inventory visually
+                player.openInventory.topInventory.setItem(slot, itemStack.clone())
+                
                 onSlotChange(player, slot, oldItem, itemStack)
                 return true
             }
@@ -278,6 +286,10 @@ abstract class InteractiveMenu : Menu {
         for ((slot, item) in items) {
             val oldItem = getSlotItem(slot)
             setSlotItem(slot, item)
+            
+            // Actually place the item in the inventory visually
+            player.openInventory.topInventory.setItem(slot, item.clone())
+            
             onSlotChange(player, slot, oldItem, item)
         }
 

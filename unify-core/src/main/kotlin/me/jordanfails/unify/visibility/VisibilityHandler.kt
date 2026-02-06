@@ -49,7 +49,7 @@ object VisibilityHandler {
     }
 
     fun treatAsOnline(target: Player, viewer: Player): Boolean {
-        return viewer.canSee(target) || !target.hasMetadata("invisible") || viewer.hasPermission("minexd.staff")
+        return viewer.canSee(target) || !VanishHandler.isVanished(target) || VanishHandler.canSeeVanished(viewer)
     }
 
     private fun shouldSee(target: Player, viewer: Player): Boolean {

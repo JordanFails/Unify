@@ -9,8 +9,12 @@ version = "1.0-SNAPSHOT"
 
 repositories {
     mavenCentral()
+    mavenLocal()
     maven("https://repo.papermc.io/repository/maven-public/") {
         name = "papermc-repo"
+    }
+    maven("https://repo.aikar.co/content/groups/aikar/") {
+        name = "aikar"
     }
 }
 
@@ -19,7 +23,11 @@ dependencies {
     compileOnly("org.spigotmc:spigot-api:1.16.5-R0.1-SNAPSHOT")
     compileOnly("com.mojang:authlib:1.5.25") // Java 8 compatible version
     implementation(kotlin("stdlib"))
+    implementation(kotlin("reflect"))
     implementation("com.github.cryptomorin:XSeries:10.0.0")
+    implementation("co.aikar:acf-paper:0.5.1-SNAPSHOT")
+    implementation("me.jordanfails:honey:1.0.0")
+
 }
 
 // Default compilation for Java 8 (maximum compatibility)
