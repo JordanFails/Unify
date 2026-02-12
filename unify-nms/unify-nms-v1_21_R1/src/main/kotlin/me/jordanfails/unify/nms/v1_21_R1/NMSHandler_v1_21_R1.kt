@@ -513,14 +513,40 @@ class NMSHandler_v1_21_R1 : NMSHandler {
     }
     
     private fun parseText(text: String): Component {
-        val adventureComponent = if (text.contains('<') && text.contains('>')) {
-            MiniMessage.miniMessage().deserialize(text)
-        } else {
-            net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
-                .legacyAmpersand()
-                .deserialize(text)
-        }
+        val converted = convertLegacyToMiniMessage(text)
+        val adventureComponent = MiniMessage.miniMessage().deserialize(converted)
         return PaperAdventure.asVanilla(adventureComponent)
+    }
+
+    private fun convertLegacyToMiniMessage(text: String): String {
+        val colorMap = mapOf(
+            '0' to "black", '1' to "dark_blue", '2' to "dark_green", '3' to "dark_aqua",
+            '4' to "dark_red", '5' to "dark_purple", '6' to "gold", '7' to "gray",
+            '8' to "dark_gray", '9' to "blue", 'a' to "green", 'b' to "aqua",
+            'c' to "red", 'd' to "light_purple", 'e' to "yellow", 'f' to "white"
+        )
+        val formatMap = mapOf(
+            'k' to "obfuscated", 'l' to "bold", 'm' to "strikethrough",
+            'n' to "underlined", 'o' to "italic", 'r' to "reset"
+        )
+        val result = StringBuilder()
+        var i = 0
+        while (i < text.length) {
+            if (i + 1 < text.length && text[i] == '&') {
+                val code = text[i + 1].lowercaseChar()
+                val color = colorMap[code]
+                val format = formatMap[code]
+                when {
+                    color != null -> { result.append("<$color>"); i += 2 }
+                    format != null -> { result.append("<$format>"); i += 2 }
+                    else -> { result.append(text[i]); i++ }
+                }
+            } else {
+                result.append(text[i])
+                i++
+            }
+        }
+        return result.toString()
     }
     
     override fun sendTabHeaderFooter(player: Player, header: String, footer: String) {
