@@ -218,9 +218,41 @@ object CC {
     // ------------------------------------------------------------------------
 
     /**
-     * Translates color codes including custom hex (#RRGGBB).
+     * Translates color codes including custom hex (#RRGGBB) and MiniMessage tags.
+     * 
+     * Supports:
+     * - Legacy color codes: &a, &b, &c, etc.
+     * - Hex colors: #RRGGBB
+     * - MiniMessage: <red>, <rainbow>, <gradient>, etc.
+     * 
+     * MiniMessage is only available on Paper 1.16.5+ servers. On older servers,
+     * MiniMessage tags will be ignored.
      */
     fun translate(input: String): String {
+        // First check if MiniMessage is available and if input contains MiniMessage tags
+        if (input.contains('<') && input.contains('>')) {
+            try {
+                // Try to use MiniMessage (only available on Paper servers)
+                val miniMessage = Class.forName("net.kyori.adventure.text.minimessage.MiniMessage")
+                    .getDeclaredMethod("miniMessage")
+                    .invoke(null)
+                
+                val deserializeMethod = miniMessage.javaClass.getMethod("deserialize", String::class.java)
+                val component = deserializeMethod.invoke(miniMessage, input)
+                
+                // Convert to legacy format for compatibility
+                val legacySerializer = Class.forName("net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer")
+                    .getDeclaredMethod("legacySection")
+                    .invoke(null)
+                
+                val serializeMethod = legacySerializer.javaClass.getMethod("serialize", Class.forName("net.kyori.adventure.text.Component"))
+                return serializeMethod.invoke(legacySerializer, component) as String
+            } catch (e: Exception) {
+                // MiniMessage not available or parsing failed, fall back to legacy translation
+            }
+        }
+        
+        // Legacy translation with hex support
         var msg = input
         val hexPattern = Pattern.compile("#[a-fA-F0-9]{6}")
         var matcher = hexPattern.matcher(msg)

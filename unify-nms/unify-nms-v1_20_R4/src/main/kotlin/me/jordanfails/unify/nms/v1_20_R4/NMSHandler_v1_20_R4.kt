@@ -193,6 +193,89 @@ class NMSHandler_v1_20_R4 : NMSHandler {
     override fun getScoreboardLineLimit(): Int = 32767
     override fun getTeamPrefixLimit(): Int = 32767
     
+    override fun sendScoreboardObjective(player: Player, name: String, title: String, mode: Int) {
+        try {
+            val connection = (player as CraftPlayer).handle.connection
+            
+            // Parse MiniMessage directly into Component (no legacy detour)
+            val adventureComponent = if (title.contains('<') && title.contains('>')) {
+                net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().deserialize(title)
+            } else {
+                net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
+                    .legacyAmpersand()
+                    .deserialize(title)
+            }
+            val nmsComponent = io.papermc.paper.adventure.PaperAdventure.asVanilla(adventureComponent)
+            
+            val dummyScoreboard = net.minecraft.world.scores.Scoreboard()
+            val objective = dummyScoreboard.addObjective(
+                name,
+                net.minecraft.world.scores.criteria.ObjectiveCriteria.DUMMY,
+                nmsComponent,
+                net.minecraft.world.scores.criteria.ObjectiveCriteria.RenderType.INTEGER,
+                true,
+                null
+            )
+            
+            val packet = net.minecraft.network.protocol.game.ClientboundSetObjectivePacket(objective, mode)
+            connection.send(packet)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    override fun sendScoreboardDisplaySlot(player: Player, objectiveName: String, slot: Int) {
+        try {
+            val connection = (player as CraftPlayer).handle.connection
+            val displaySlot = when (slot) {
+                0 -> net.minecraft.world.scores.DisplaySlot.LIST
+                1 -> net.minecraft.world.scores.DisplaySlot.SIDEBAR
+                2 -> net.minecraft.world.scores.DisplaySlot.BELOW_NAME
+                else -> return
+            }
+            
+            val dummyScoreboard = net.minecraft.world.scores.Scoreboard()
+            val objective = dummyScoreboard.addObjective(
+                objectiveName,
+                net.minecraft.world.scores.criteria.ObjectiveCriteria.DUMMY,
+                net.minecraft.network.chat.Component.empty(),
+                net.minecraft.world.scores.criteria.ObjectiveCriteria.RenderType.INTEGER,
+                true,
+                null
+            )
+            
+            val packet = net.minecraft.network.protocol.game.ClientboundSetDisplayObjectivePacket(displaySlot, objective)
+            connection.send(packet)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    override fun sendScoreboardScore(player: Player, objectiveName: String, entry: String, score: Int, mode: Int) {
+        try {
+            val connection = (player as CraftPlayer).handle.connection
+            
+            val packet = when (mode) {
+                0 -> net.minecraft.network.protocol.game.ClientboundSetScorePacket(
+                    entry,
+                    objectiveName,
+                    score,
+                    null,
+                    null
+                )
+                1 -> net.minecraft.network.protocol.game.ClientboundResetScorePacket(
+                    entry,
+                    objectiveName
+                )
+                else -> return
+            }
+            
+            connection.send(packet)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+    
     // --- BossBar Implementation (uses Bukkit API for 1.9+) ---
     private val playerBossBars = mutableMapOf<UUID, MutableMap<UUID, BossBar>>()
     
@@ -382,6 +465,29 @@ class NMSHandler_v1_20_R4 : NMSHandler {
             e.printStackTrace()
             hideHologram(player, hologram)
             spawnHologram(player, hologram)
+        }
+    }
+    
+    private fun parseText(text: String): net.minecraft.network.chat.Component {
+        val adventureComponent = if (text.contains('<') && text.contains('>')) {
+            net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().deserialize(text)
+        } else {
+            net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
+                .legacyAmpersand()
+                .deserialize(text)
+        }
+        return io.papermc.paper.adventure.PaperAdventure.asVanilla(adventureComponent)
+    }
+    
+    override fun sendTabHeaderFooter(player: Player, header: String, footer: String) {
+        try {
+            val connection = (player as CraftPlayer).handle.connection
+            val headerComponent = parseText(header)
+            val footerComponent = parseText(footer)
+            val packet = net.minecraft.network.protocol.game.ClientboundTabListPacket(headerComponent, footerComponent)
+            connection.send(packet)
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 }

@@ -9,7 +9,7 @@ class OpNametagProvider : NametagProvider("OP Nametag Provider", 10) {
 
     override fun fetchNametag(toRefresh: Player, refreshFor: Player): NametagInfo {
         return if (toRefresh.isOp) {
-            createNametag(CC.translate("&e✿&a"), "")
+            createNametag(CC.translate("&e✿ &a"), "")
         } else {
             createNametag(CC.translate("&7"), "")
         }

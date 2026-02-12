@@ -1,0 +1,26 @@
+scoreboard:
+  title: "&d&lHUB"
+  lines:
+    - "&fRank: &d<rank>"
+    - "&fFriends Online: &d0"
+    - "&fLevel: &d0"
+    - "  &fProgress: &d<bar>"
+    - ""
+    - "&fLobby: &dGarden"
+    - "&fPlayers: &d0/1000"
+    - ""
+    - "&eplay.etheriamc.net"
+
+tab:
+  enabled: true
+  update-interval-ticks: 40
+  header:
+    - ""
+    - "<gradient:light_purple:gold><bold>EtheriaMC</bold></gradient>"
+    - "&7Welcome, &f{player}"
+    - ""
+  footer:
+    - ""
+    - "&7Online: &d{online}&7/&d{max_players}"
+    - "&eplay.etheriamc.net"
+    - ""

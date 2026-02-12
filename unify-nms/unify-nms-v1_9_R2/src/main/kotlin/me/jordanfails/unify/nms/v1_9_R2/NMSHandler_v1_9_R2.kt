@@ -222,6 +222,52 @@ class NMSHandler_v1_9_R2 : NMSHandler {
     override fun getScoreboardLineLimit(): Int = 32
     override fun getTeamPrefixLimit(): Int = 16
     
+    override fun sendScoreboardObjective(player: Player, name: String, title: String, mode: Int) {
+        try {
+            val connection = (player as CraftPlayer).handle.playerConnection
+            val packet = PacketPlayOutScoreboardObjective()
+            
+            setField(packet, "a", name)
+            setField(packet, "b", title)
+            setField(packet, "c", IScoreboardCriteria.EnumScoreboardHealthDisplay.INTEGER)
+            setField(packet, "d", mode)
+            
+            connection.sendPacket(packet)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    override fun sendScoreboardDisplaySlot(player: Player, objectiveName: String, slot: Int) {
+        try {
+            val connection = (player as CraftPlayer).handle.playerConnection
+            val packet = PacketPlayOutScoreboardDisplayObjective()
+            
+            setField(packet, "a", slot)
+            setField(packet, "b", objectiveName)
+            
+            connection.sendPacket(packet)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    override fun sendScoreboardScore(player: Player, objectiveName: String, entry: String, score: Int, mode: Int) {
+        try {
+            val connection = (player as CraftPlayer).handle.playerConnection
+            val packet = PacketPlayOutScoreboardScore()
+            
+            setField(packet, "a", entry)
+            setField(packet, "b", objectiveName)
+            setField(packet, "c", score)
+            setField(packet, "d", if (mode == 0) PacketPlayOutScoreboardScore.EnumScoreboardAction.CHANGE else PacketPlayOutScoreboardScore.EnumScoreboardAction.REMOVE)
+            
+            connection.sendPacket(packet)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+    
     // --- BossBar Implementation (uses Bukkit API for 1.9+) ---
     private val playerBossBars = mutableMapOf<UUID, MutableMap<UUID, BossBar>>()
     
@@ -541,5 +587,19 @@ class NMSHandler_v1_9_R2 : NMSHandler {
             field.isAccessible = true
             field.set(entity, id)
         } catch (_: Throwable) {}
+    }
+
+    override fun sendTabHeaderFooter(player: Player, header: String, footer: String) {
+        try {
+            val connection = (player as CraftPlayer).handle.playerConnection
+            val headerComponent = IChatBaseComponent.ChatSerializer.a("{\"text\":\"${me.jordanfails.unify.utils.CC.translate(header)}\"}")!!
+            val footerComponent = IChatBaseComponent.ChatSerializer.a("{\"text\":\"${me.jordanfails.unify.utils.CC.translate(footer)}\"}")!!
+            val packet = PacketPlayOutPlayerListHeaderFooter()
+            setField(packet, "a", headerComponent)
+            setField(packet, "b", footerComponent)
+            connection.sendPacket(packet)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 }

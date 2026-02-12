@@ -6,6 +6,7 @@ import me.jordanfails.unify.exception.InvalidOutputException
 import me.jordanfails.unify.hologram.HologramLine
 import me.jordanfails.unify.hologram.UnifyHologram
 import me.jordanfails.unify.nms.NMSHandler
+import me.jordanfails.unify.utils.CC
 import net.minecraft.server.v1_8_R3.*
 import org.bukkit.Bukkit
 import org.bukkit.craftbukkit.v1_8_R3.CraftWorld
@@ -204,6 +205,52 @@ class NMSHandler_v1_8_R3 : NMSHandler {
     // 1.8 has legacy limits
     override fun getScoreboardLineLimit(): Int = 32
     override fun getTeamPrefixLimit(): Int = 16
+    
+    override fun sendScoreboardObjective(player: Player, name: String, title: String, mode: Int) {
+        try {
+            val connection = (player as CraftPlayer).handle.playerConnection
+            val packet = PacketPlayOutScoreboardObjective()
+            
+            setField(packet, "a", name) // objective name
+            setField(packet, "b", CC.translate(title)) // display name (translated)
+            setField(packet, "c", IScoreboardCriteria.EnumScoreboardHealthDisplay.INTEGER) // render type
+            setField(packet, "d", mode) // mode: 0=CREATE, 1=REMOVE, 2=UPDATE
+            
+            connection.sendPacket(packet)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    override fun sendScoreboardDisplaySlot(player: Player, objectiveName: String, slot: Int) {
+        try {
+            val connection = (player as CraftPlayer).handle.playerConnection
+            val packet = PacketPlayOutScoreboardDisplayObjective()
+            
+            setField(packet, "a", slot) // position
+            setField(packet, "b", objectiveName) // objective name
+            
+            connection.sendPacket(packet)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    override fun sendScoreboardScore(player: Player, objectiveName: String, entry: String, score: Int, mode: Int) {
+        try {
+            val connection = (player as CraftPlayer).handle.playerConnection
+            val packet = PacketPlayOutScoreboardScore()
+            
+            setField(packet, "a", entry) // entry name
+            setField(packet, "b", objectiveName) // objective name
+            setField(packet, "c", score) // score value
+            setField(packet, "d", if (mode == 0) PacketPlayOutScoreboardScore.EnumScoreboardAction.CHANGE else PacketPlayOutScoreboardScore.EnumScoreboardAction.REMOVE)
+            
+            connection.sendPacket(packet)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
     
     // --- BossBar Implementation for 1.8 (uses Wither entity) ---
     private val playerWitherIds = mutableMapOf<java.util.UUID, MutableMap<java.util.UUID, Int>>()
@@ -511,6 +558,19 @@ class NMSHandler_v1_8_R3 : NMSHandler {
             e.printStackTrace()
             hideHologram(player, hologram)
             spawnHologram(player, hologram)
+        }
+    }
+
+    override fun sendTabHeaderFooter(player: Player, header: String, footer: String) {
+        try {
+            val connection = (player as CraftPlayer).handle.playerConnection
+            val headerComponent = IChatBaseComponent.ChatSerializer.a("{\"text\":\"${CC.translate(header)}\"}")
+            val footerComponent = IChatBaseComponent.ChatSerializer.a("{\"text\":\"${CC.translate(footer)}\"}")
+            val packet = PacketPlayOutPlayerListHeaderFooter(headerComponent)
+            setField(packet, "b", footerComponent)
+            connection.sendPacket(packet)
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 }

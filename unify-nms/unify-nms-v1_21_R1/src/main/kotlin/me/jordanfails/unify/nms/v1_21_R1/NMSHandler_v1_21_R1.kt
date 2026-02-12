@@ -1,23 +1,32 @@
 package me.jordanfails.unify.nms.v1_21_R1
 
+import io.papermc.paper.adventure.PaperAdventure
 import me.jordanfails.unify.bossbar.BossBarColor
 import me.jordanfails.unify.bossbar.BossBarStyle
 import me.jordanfails.unify.bossbar.UnifyBossBar
 import me.jordanfails.unify.hologram.HologramLine
 import me.jordanfails.unify.hologram.UnifyHologram
 import me.jordanfails.unify.nms.NMSHandler
+import net.kyori.adventure.text.minimessage.MiniMessage
 import net.minecraft.ChatFormatting
 import net.minecraft.network.chat.Component
 import net.minecraft.network.protocol.game.ClientboundAddEntityPacket
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket
+import net.minecraft.network.protocol.game.ClientboundResetScorePacket
+import net.minecraft.network.protocol.game.ClientboundSetDisplayObjectivePacket
 import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket
+import net.minecraft.network.protocol.game.ClientboundSetObjectivePacket
 import net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket
+import net.minecraft.network.protocol.game.ClientboundSetScorePacket
 import net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket
 import net.minecraft.world.entity.decoration.ArmorStand
 import net.minecraft.world.entity.item.ItemEntity
+import net.minecraft.world.scores.DisplaySlot
+import net.minecraft.world.scores.Objective
 import net.minecraft.world.scores.PlayerTeam
 import net.minecraft.world.scores.Scoreboard
 import net.minecraft.world.scores.Team
+import net.minecraft.world.scores.criteria.ObjectiveCriteria
 import org.bukkit.Bukkit
 import org.bukkit.block.BlockState
 import org.bukkit.boss.BarColor
@@ -30,6 +39,7 @@ import org.bukkit.entity.Player
 import org.bukkit.inventory.Inventory
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.meta.Damageable
+import java.util.Optional
 import java.util.UUID
 
 @Suppress("unused")
@@ -292,8 +302,8 @@ class NMSHandler_v1_21_R1 : NMSHandler {
                         armorStand.isCustomNameVisible = true
                         armorStand.isInvisible = true
                         armorStand.isNoGravity = true
-                        armorStand.setSmall(true)
-                        armorStand.setMarker(true)
+                        armorStand.isSmall = true
+                        armorStand.isMarker = true
                         
                         val addPacket = ClientboundAddEntityPacket(
                             entityId,
@@ -321,7 +331,7 @@ class NMSHandler_v1_21_R1 : NMSHandler {
                         val nmsItem = CraftItemStack.asNMSCopy(line.itemStack)
                         val itemEntity = ItemEntity(world, hologram.location.x, currentY, hologram.location.z, nmsItem)
                         itemEntity.id = entityId
-                        itemEntity.setNoGravity(true)
+                        itemEntity.isNoGravity = true
                         itemEntity.setNeverPickUp()
                         
                         val addPacket = ClientboundAddEntityPacket(
@@ -363,9 +373,7 @@ class NMSHandler_v1_21_R1 : NMSHandler {
             
             for (i in lines.indices) {
                 val entityId = entityIds[i]
-                val line = lines[i]
-                
-                when (line) {
+                when (val line = lines[i]) {
                     is HologramLine.Text -> {
                         val armorStand = ArmorStand(world, hologram.location.x, currentY, hologram.location.z)
                         armorStand.id = entityId
@@ -388,7 +396,7 @@ class NMSHandler_v1_21_R1 : NMSHandler {
                         val nmsItem = CraftItemStack.asNMSCopy(line.itemStack)
                         val itemEntity = ItemEntity(world, hologram.location.x, currentY, hologram.location.z, nmsItem)
                         itemEntity.id = entityId
-                        itemEntity.setNoGravity(true)
+                        itemEntity.isNoGravity = true
                         
                         val dataValues = itemEntity.entityData.packAll()
                         if (dataValues != null) {
@@ -406,6 +414,124 @@ class NMSHandler_v1_21_R1 : NMSHandler {
             e.printStackTrace()
             hideHologram(player, hologram)
             spawnHologram(player, hologram)
+        }
+    }
+
+    override fun sendScoreboardObjective(player: Player, name: String, title: String, mode: Int) {
+        try {
+            val connection = (player as CraftPlayer).handle.connection
+
+            // Parse MiniMessage directly into Component (no legacy detour)
+            // This avoids bloated hex color codes from legacy conversion
+            val adventureComponent = if (title.contains('<') && title.contains('>')) {
+                MiniMessage.miniMessage().deserialize(title)
+            } else {
+                net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
+                    .legacyAmpersand()
+                    .deserialize(title)
+            }
+            val nmsComponent = PaperAdventure.asVanilla(adventureComponent)
+            
+            val packet = when (mode) {
+                0 -> ClientboundSetObjectivePacket(
+                    createObjective(name, nmsComponent),
+                    0 // CREATE
+                )
+                1 -> ClientboundSetObjectivePacket(
+                    createObjective(name, nmsComponent),
+                    1 // REMOVE
+                )
+                2 -> ClientboundSetObjectivePacket(
+                    createObjective(name, nmsComponent),
+                    2 // UPDATE
+                )
+                else -> return
+            }
+            
+            connection.send(packet)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    override fun sendScoreboardDisplaySlot(player: Player, objectiveName: String, slot: Int) {
+        try {
+            val connection = (player as CraftPlayer).handle.connection
+            val displaySlot = when (slot) {
+                0 -> DisplaySlot.LIST
+                1 -> DisplaySlot.SIDEBAR
+                2 -> DisplaySlot.BELOW_NAME
+                else -> return
+            }
+            
+            // Create a dummy objective just to generate the packet structure
+            // The actual objective is already registered from sendScoreboardObjective
+            val dummyObjective = createObjective(objectiveName, Component.empty())
+            val packet = ClientboundSetDisplayObjectivePacket(displaySlot, dummyObjective)
+            
+            connection.send(packet)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    override fun sendScoreboardScore(player: Player, objectiveName: String, entry: String, score: Int, mode: Int) {
+        try {
+            val connection = (player as CraftPlayer).handle.connection
+
+            val packet = when (mode) {
+                0 -> ClientboundSetScorePacket(
+                    entry,
+                    objectiveName,
+                    score,
+                    Optional.empty(),
+                    Optional.empty()
+                )
+                1 -> ClientboundResetScorePacket(
+                    entry,
+                    objectiveName
+                )
+                else -> return
+            }
+
+            connection.send(packet)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun createObjective(name: String, displayName: Component): Objective {
+        val dummyScoreboard = Scoreboard()
+        return dummyScoreboard.addObjective(
+            name,
+            ObjectiveCriteria.DUMMY,
+            displayName,
+            ObjectiveCriteria.RenderType.INTEGER,
+            true,
+            null
+        )
+    }
+    
+    private fun parseText(text: String): Component {
+        val adventureComponent = if (text.contains('<') && text.contains('>')) {
+            MiniMessage.miniMessage().deserialize(text)
+        } else {
+            net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
+                .legacyAmpersand()
+                .deserialize(text)
+        }
+        return PaperAdventure.asVanilla(adventureComponent)
+    }
+    
+    override fun sendTabHeaderFooter(player: Player, header: String, footer: String) {
+        try {
+            val connection = (player as CraftPlayer).handle.connection
+            val headerComponent = parseText(header)
+            val footerComponent = parseText(footer)
+            val packet = net.minecraft.network.protocol.game.ClientboundTabListPacket(headerComponent, footerComponent)
+            connection.send(packet)
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 }

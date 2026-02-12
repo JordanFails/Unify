@@ -8,6 +8,10 @@ import me.jordanfails.unify.nametag.NametagListener
 import me.jordanfails.unify.nms.NMSHandler
 import me.jordanfails.unify.nms.NMSHandlerFactory
 import me.jordanfails.unify.menu.tasks.MenuAutoUpdater
+import me.jordanfails.unify.scoreboard.ScoreboardHandler
+import me.jordanfails.unify.scoreboard.ScoreboardListener
+import me.jordanfails.unify.tab.TabHandler
+import me.jordanfails.unify.tab.TabListener
 import co.aikar.commands.PaperCommandManager
 import me.jordanfails.unify.hologram.HologramManager
 import me.jordanfails.unify.hologram.command.HologramCommand
@@ -30,6 +34,8 @@ class UnifyCore : JavaPlugin() {
         nms = NMSHandlerFactory.getHandler()
         setupVisibility()
         setupNametags()
+        setupScoreboards()
+        setupTab()
         setupMenu()
         setupHolograms()
         setupCommands()
@@ -69,5 +75,15 @@ class UnifyCore : JavaPlugin() {
 
     private fun setupHolograms() {
         HologramManager.enable(this)
+    }
+
+    private fun setupScoreboards() {
+        ScoreboardHandler.initialLoad()
+        server.pluginManager.registerEvents(ScoreboardListener, this)
+    }
+
+    private fun setupTab() {
+        TabHandler.initialLoad()
+        server.pluginManager.registerEvents(TabListener, this)
     }
 }

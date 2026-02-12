@@ -76,6 +76,25 @@ interface NMSHandler {
      */
     fun getTeamPrefixLimit(): Int
     
+    // --- Scoreboard Packet API ---
+    /**
+     * Sends a scoreboard objective packet to a player.
+     * @param mode 0 = CREATE, 1 = REMOVE, 2 = UPDATE
+     */
+    fun sendScoreboardObjective(player: Player, name: String, title: String, mode: Int)
+    
+    /**
+     * Sends a display slot packet to show an objective in a specific slot.
+     * @param slot 0 = List, 1 = Sidebar, 2 = BelowName
+     */
+    fun sendScoreboardDisplaySlot(player: Player, objectiveName: String, slot: Int)
+    
+    /**
+     * Sends a score packet to set a score for an entry.
+     * @param mode 0 = CHANGE, 1 = REMOVE
+     */
+    fun sendScoreboardScore(player: Player, objectiveName: String, entry: String, score: Int, mode: Int)
+    
     // --- BossBar API ---
     /**
      * Show a boss bar to a player.
@@ -107,4 +126,10 @@ interface NMSHandler {
      * Update a hologram for a player (text, lines, location).
      */
     fun updateHologram(player: Player, hologram: UnifyHologram)
+    
+    /**
+     * Sends a tab list header and footer to a player.
+     * Text supports MiniMessage on modern servers, legacy color codes on all.
+     */
+    fun sendTabHeaderFooter(player: Player, header: String, footer: String)
 }

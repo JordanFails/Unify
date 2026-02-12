@@ -177,6 +177,50 @@ class NMSHandler_v1_16_R3 : NMSHandler {
     override fun getScoreboardLineLimit(): Int = 32767
     override fun getTeamPrefixLimit(): Int = 32767
     
+    override fun sendScoreboardObjective(player: Player, name: String, title: String, mode: Int) {
+        try {
+            val connection = (player as CraftPlayer).handle.playerConnection
+            val titleComponent = IChatBaseComponent.ChatSerializer.a("{\"text\":\"$title\"}")
+            val dummyScoreboard = Scoreboard()
+            val objective = dummyScoreboard.registerObjective(
+                name,
+                IScoreboardCriteria.DUMMY,
+                titleComponent,
+                IScoreboardCriteria.EnumScoreboardHealthDisplay.INTEGER
+            )
+            
+            val packet = PacketPlayOutScoreboardObjective(objective, mode)
+            connection.sendPacket(packet)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    override fun sendScoreboardDisplaySlot(player: Player, objectiveName: String, slot: Int) {
+        try {
+            val connection = (player as CraftPlayer).handle.playerConnection
+            val packet = PacketPlayOutScoreboardDisplayObjective(slot, null)
+            
+            setField(packet, "b", objectiveName)
+            
+            connection.sendPacket(packet)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    override fun sendScoreboardScore(player: Player, objectiveName: String, entry: String, score: Int, mode: Int) {
+        try {
+            val connection = (player as CraftPlayer).handle.playerConnection
+            val action = if (mode == 0) ScoreboardServer.Action.CHANGE else ScoreboardServer.Action.REMOVE
+            val packet = PacketPlayOutScoreboardScore(action, objectiveName, entry, score)
+            
+            connection.sendPacket(packet)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+    
     // --- BossBar Implementation (uses Bukkit API for 1.9+) ---
     private val playerBossBars = mutableMapOf<UUID, MutableMap<UUID, BossBar>>()
     
@@ -353,6 +397,20 @@ class NMSHandler_v1_16_R3 : NMSHandler {
             e.printStackTrace()
             hideHologram(player, hologram)
             spawnHologram(player, hologram)
+        }
+    }
+    
+    override fun sendTabHeaderFooter(player: Player, header: String, footer: String) {
+        try {
+            val connection = (player as CraftPlayer).handle.playerConnection
+            val headerComponent = IChatBaseComponent.ChatSerializer.a("{\"text\":\"${me.jordanfails.unify.utils.CC.translate(header)}\"}")!!
+            val footerComponent = IChatBaseComponent.ChatSerializer.a("{\"text\":\"${me.jordanfails.unify.utils.CC.translate(footer)}\"}")!!
+            val packet = PacketPlayOutPlayerListHeaderFooter()
+            setField(packet, "header", headerComponent)
+            setField(packet, "footer", footerComponent)
+            connection.sendPacket(packet)
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 }

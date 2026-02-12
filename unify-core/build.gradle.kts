@@ -22,6 +22,12 @@ dependencies {
     // Compile against 1.16.5 API (has modern Material names, runs on Java 8-16)
     compileOnly("org.spigotmc:spigot-api:1.16.5-R0.1-SNAPSHOT")
     compileOnly("com.mojang:authlib:1.5.25") // Java 8 compatible version
+    
+    // Adventure API for MiniMessage (Paper bundles these at runtime)
+    compileOnly("net.kyori:adventure-api:4.14.0")
+    compileOnly("net.kyori:adventure-text-minimessage:4.14.0")
+    compileOnly("net.kyori:adventure-text-serializer-legacy:4.14.0")
+    
     implementation(kotlin("stdlib"))
     implementation(kotlin("reflect"))
     implementation("com.github.cryptomorin:XSeries:10.0.0")
