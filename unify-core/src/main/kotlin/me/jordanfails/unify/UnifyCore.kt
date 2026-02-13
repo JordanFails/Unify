@@ -13,6 +13,7 @@ import me.jordanfails.unify.scoreboard.ScoreboardListener
 import me.jordanfails.unify.tab.TabHandler
 import me.jordanfails.unify.tab.TabListener
 import co.aikar.commands.PaperCommandManager
+import me.jordanfails.unify.acf.ACFCommandController
 import me.jordanfails.unify.hologram.HologramManager
 import me.jordanfails.unify.hologram.command.HologramCommand
 import me.jordanfails.unify.visibility.VisibilityHandler
@@ -24,6 +25,7 @@ class UnifyCore : JavaPlugin() {
 
     companion object {
         lateinit var instance: UnifyCore
+        lateinit var commandManager: PaperCommandManager
     }
 
     var nms: NMSHandler? = null
@@ -32,6 +34,8 @@ class UnifyCore : JavaPlugin() {
         instance = this
         saveDefaultConfig()
         nms = NMSHandlerFactory.getHandler()
+        commandManager = PaperCommandManager(this)
+        ACFCommandController.registerAll()
         setupVisibility()
         setupNametags()
         setupScoreboards()
@@ -46,7 +50,7 @@ class UnifyCore : JavaPlugin() {
     }
 
     private fun setupVisibility() {
-        VisibilityHandler.registerAdapter("vanish", VanishVisibilityAdapter)
+        VisibilityHandler.registerAdapter(VanishVisibilityAdapter)
         listOf(
             VisibilityListeners,
         ).forEach { listener -> this.server.pluginManager.registerEvents(listener, this) }
@@ -69,7 +73,6 @@ class UnifyCore : JavaPlugin() {
     }
 
     private fun setupCommands() {
-        val commandManager = PaperCommandManager(this)
         commandManager.registerCommand(HologramCommand())
     }
 

@@ -8,6 +8,7 @@ import me.jordanfails.unify.hologram.HologramLine
 import me.jordanfails.unify.hologram.UnifyHologram
 import me.jordanfails.unify.nms.NMSHandler
 import net.kyori.adventure.text.minimessage.MiniMessage
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
 import net.minecraft.ChatFormatting
 import net.minecraft.network.chat.Component
 import net.minecraft.network.protocol.game.ClientboundAddEntityPacket
@@ -18,7 +19,7 @@ import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket
 import net.minecraft.network.protocol.game.ClientboundSetObjectivePacket
 import net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket
 import net.minecraft.network.protocol.game.ClientboundSetScorePacket
-import net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket
+import net.minecraft.network.protocol.game.ClientboundTabListPacket
 import net.minecraft.world.entity.decoration.ArmorStand
 import net.minecraft.world.entity.item.ItemEntity
 import net.minecraft.world.scores.DisplaySlot
@@ -373,6 +374,9 @@ class NMSHandler_v1_21_R1 : NMSHandler {
             
             for (i in lines.indices) {
                 val entityId = entityIds[i]
+                // 1.21+ changed teleport packet internals between minor releases.
+                // Re-spawn each existing line entity with the same id to avoid brittle teleport constructors.
+                connection.send(ClientboundRemoveEntitiesPacket(entityId))
                 when (val line = lines[i]) {
                     is HologramLine.Text -> {
                         val armorStand = ArmorStand(world, hologram.location.x, currentY, hologram.location.z)
@@ -382,14 +386,26 @@ class NMSHandler_v1_21_R1 : NMSHandler {
                         armorStand.isInvisible = true
                         armorStand.isMarker = true
                         
+                        val addPacket = ClientboundAddEntityPacket(
+                            entityId,
+                            armorStand.uuid,
+                            armorStand.x,
+                            armorStand.y,
+                            armorStand.z,
+                            armorStand.xRot,
+                            armorStand.yRot,
+                            armorStand.type,
+                            0,
+                            armorStand.deltaMovement,
+                            armorStand.yHeadRot.toDouble()
+                        )
+                        connection.send(addPacket)
+
                         val dataValues = armorStand.entityData.packAll()
                         if (dataValues != null) {
                             val metaPacket = ClientboundSetEntityDataPacket(entityId, dataValues)
                             connection.send(metaPacket)
                         }
-                        
-                        val teleportPacket = ClientboundTeleportEntityPacket(armorStand)
-                        connection.send(teleportPacket)
                         currentY -= 0.25
                     }
                     is HologramLine.Item -> {
@@ -397,15 +413,28 @@ class NMSHandler_v1_21_R1 : NMSHandler {
                         val itemEntity = ItemEntity(world, hologram.location.x, currentY, hologram.location.z, nmsItem)
                         itemEntity.id = entityId
                         itemEntity.isNoGravity = true
+                        itemEntity.setNeverPickUp()
+
+                        val addPacket = ClientboundAddEntityPacket(
+                            entityId,
+                            itemEntity.uuid,
+                            itemEntity.x,
+                            itemEntity.y,
+                            itemEntity.z,
+                            itemEntity.xRot,
+                            itemEntity.yRot,
+                            itemEntity.type,
+                            0,
+                            itemEntity.deltaMovement,
+                            itemEntity.yHeadRot.toDouble()
+                        )
+                        connection.send(addPacket)
                         
                         val dataValues = itemEntity.entityData.packAll()
                         if (dataValues != null) {
                             val metaPacket = ClientboundSetEntityDataPacket(entityId, dataValues)
                             connection.send(metaPacket)
                         }
-                        
-                        val teleportPacket = ClientboundTeleportEntityPacket(itemEntity)
-                        connection.send(teleportPacket)
                         currentY -= 0.5
                     }
                 }
@@ -426,7 +455,7 @@ class NMSHandler_v1_21_R1 : NMSHandler {
             val adventureComponent = if (title.contains('<') && title.contains('>')) {
                 MiniMessage.miniMessage().deserialize(title)
             } else {
-                net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
+                LegacyComponentSerializer
                     .legacyAmpersand()
                     .deserialize(title)
             }
@@ -554,7 +583,7 @@ class NMSHandler_v1_21_R1 : NMSHandler {
             val connection = (player as CraftPlayer).handle.connection
             val headerComponent = parseText(header)
             val footerComponent = parseText(footer)
-            val packet = net.minecraft.network.protocol.game.ClientboundTabListPacket(headerComponent, footerComponent)
+            val packet = ClientboundTabListPacket(headerComponent, footerComponent)
             connection.send(packet)
         } catch (e: Exception) {
             e.printStackTrace()

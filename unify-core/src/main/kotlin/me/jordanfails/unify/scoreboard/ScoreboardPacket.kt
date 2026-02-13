@@ -47,7 +47,7 @@ class ScoreboardPacket(
 
             for (line in displayLines) {
                 // Scoreboard entry keys must be non-empty; blank lines are represented as invisible reset codes.
-                var entry = if (line.isBlank()) "&r" else line
+                var entry = line.ifBlank { "&r" }
                 var translatedEntry = CC.translate(entry)
 
                 // Ensure uniqueness after translation (raw duplicates can still collide once colorized).

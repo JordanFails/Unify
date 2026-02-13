@@ -5,13 +5,13 @@ import org.bukkit.configuration.file.YamlConfiguration
 import org.bukkit.plugin.Plugin
 import java.io.File
 import java.io.IOException
+import java.util.LinkedHashMap
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
+import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
-import kotlin.reflect.KProperty1
 import kotlin.reflect.full.findAnnotation
-import kotlin.reflect.full.memberProperties
 
 @Target(AnnotationTarget.PROPERTY)
 @Retention(AnnotationRetention.RUNTIME)
@@ -28,6 +28,7 @@ abstract class TypeSafeConfig(
     private val configFile: File = File(plugin.dataFolder, fileName)
     private var config: FileConfiguration
     private val lock = ReentrantReadWriteLock()
+    private val notesByPath = LinkedHashMap<String, String>()
 
     init {
         try {
@@ -43,8 +44,7 @@ abstract class TypeSafeConfig(
                 }
             }
             config = YamlConfiguration.loadConfiguration(configFile)
-            load()
-        } catch (e: IOException) {
+        } catch (e: Exception) {
             plugin.logger.severe("Failed to initialize config file $fileName: ${e.message}")
             throw ConfigException("Failed to initialize config", e)
         }
@@ -52,22 +52,12 @@ abstract class TypeSafeConfig(
 
     @Suppress("UNCHECKED_CAST")
     fun <T> get(path: String, default: T): T = lock.read {
-        return try {
-            when (default) {
-                is String -> (config.getString(path) ?: default) as T
-                is Int -> (config.getInt(path, default)) as T
-                is Double -> (config.getDouble(path, default)) as T
-                is Boolean -> (config.getBoolean(path, default)) as T
-                is Long -> (config.getLong(path, default)) as T
-                is Float -> (config.getDouble(path, default.toDouble()).toFloat()) as T
-                is List<*> -> (config.getList(path) ?: default) as T
-                else -> (config.get(path) ?: default) as T
-            }
+        val raw = config.get(path) ?: return@read default
+        try {
+            return@read convertValue(path, raw, default)
         } catch (e: Exception) {
-            plugin.logger.warning(
-                "Error reading config path '$path', using default: ${e.message}"
-            )
-            default
+            plugin.logger.warning("Error reading config path '$path', using default: ${e.message}")
+            return@read default
         }
     }
 
@@ -82,138 +72,144 @@ abstract class TypeSafeConfig(
             plugin.logger.severe("Failed to save config file $fileName: ${e.message}")
             throw ConfigException("Failed to save config", e)
         }
+
+        writeNotesHeader()
     }
 
     fun reload() = lock.write {
         try {
             config = YamlConfiguration.loadConfiguration(configFile)
-            load()
         } catch (e: Exception) {
             plugin.logger.severe("Failed to reload config file $fileName: ${e.message}")
             throw ConfigException("Failed to reload config", e)
         }
     }
 
-    private fun load() {
-        val properties = this::class.memberProperties
-        val commentsToWrite = mutableMapOf<String, String>()
-        var hasChanges = false
+    internal fun <T> bindProperty(property: KProperty<*>, explicitPath: String?, default: T): String {
+        val annotationPath = property.findAnnotation<ConfigPath>()?.value
+        val resolvedPath = explicitPath ?: annotationPath
+            ?: throw ConfigException(
+                "Missing config path for property '${property.name}'. Add @ConfigPath or use value(\"path\", default)."
+            )
+        val note = property.findAnnotation<ConfigNote>()?.value
 
-        for (property in properties) {
-            val configPath = property.findAnnotation<ConfigPath>() ?: continue
-            val path = configPath.value
-
-            property.findAnnotation<ConfigNote>()?.let {
-                commentsToWrite[path] = it.value
-            }
-
-            if (!config.contains(path)) {
-                @Suppress("UNCHECKED_CAST")
-                val prop = property as? KProperty1<TypeSafeConfig, *>
+        lock.write {
+            if (!config.contains(resolvedPath)) {
+                config.set(resolvedPath, default)
                 try {
-                    val defaultValue = prop?.get(this)
-                    if (defaultValue != null) {
-                        config.set(path, defaultValue)
-                        hasChanges = true
-                    }
-                } catch (e: Exception) {
-                    plugin.logger.warning(
-                        "Failed to get default value for property '${property.name}': ${e.message}"
-                    )
+                    config.save(configFile)
+                } catch (e: IOException) {
+                    throw ConfigException("Failed to save config while binding '$resolvedPath'", e)
                 }
             }
-        }
 
-        if (hasChanges) {
-            save()
-        }
-
-        if (commentsToWrite.isNotEmpty()) {
-            try {
-                writeCommentsToFile(commentsToWrite)
-            } catch (e: Exception) {
-                plugin.logger.warning(
-                    "Failed to write comments to config: ${e.message}"
-                )
+            if (note != null) {
+                notesByPath[resolvedPath] = note
+                writeNotesHeader()
             }
         }
+
+        return resolvedPath
     }
 
-    private fun writeCommentsToFile(comments: Map<String, String>) {
+    private fun writeNotesHeader() {
+        if (notesByPath.isEmpty()) return
         if (!configFile.exists()) return
+
+        val startMarker = "# --- Unify Config Notes (auto-generated) ---"
+        val endMarker = "# --- End Unify Config Notes ---"
 
         try {
             val originalContent = configFile.readText()
-            val lines = originalContent.lines().toMutableList()
-            val newLines = mutableListOf<String>()
-            val processedPaths = mutableSetOf<String>()
+            val originalLines = configFile.readLines()
+            val bodyLines = mutableListOf<String>()
 
-            var i = 0
-            while (i < lines.size) {
-                val line = lines[i]
-                val trimmed = line.trimStart()
-
-                // Skip existing comments
-                if (trimmed.startsWith("#")) {
-                    newLines.add(line)
-                    i++
+            var inManagedBlock = false
+            for (line in originalLines) {
+                val trimmed = line.trim()
+                if (trimmed == startMarker) {
+                    inManagedBlock = true
                     continue
                 }
-
-                // Check if this line matches a config path
-                var matchedPath: String? = null
-                for ((path, comment) in comments) {
-                    if (isMatchingConfigLine(line, path) && !processedPaths.contains(path)) {
-                        matchedPath = path
-                        break
-                    }
+                if (trimmed == endMarker) {
+                    inManagedBlock = false
+                    continue
                 }
-
-                if (matchedPath != null) {
-                    val comment = comments[matchedPath]!!
-                    val indent = line.takeWhile { it.isWhitespace() }
-
-                    // Check if previous line is already this comment
-                    val prevLine = newLines.lastOrNull()?.trimStart()
-                    if (prevLine != "# $comment") {
-                        newLines.add("$indent# $comment")
-                    }
-
-                    processedPaths.add(matchedPath)
-                }
-
-                newLines.add(line)
-                i++
+                if (!inManagedBlock) bodyLines.add(line)
             }
 
-            // Only write if content changed
-            val newContent = newLines.joinToString("\n")
+            val noteLines = mutableListOf<String>()
+            noteLines.add(startMarker)
+            for ((path, note) in notesByPath) {
+                noteLines.add("# $path: $note")
+            }
+            noteLines.add(endMarker)
+            noteLines.add("")
+
+            val newContent = (noteLines + bodyLines).joinToString("\n")
             if (newContent != originalContent) {
                 configFile.writeText(newContent)
             }
         } catch (e: IOException) {
-            throw ConfigException("Failed to write comments to config file", e)
+            throw ConfigException("Failed to write notes to config file", e)
         }
     }
 
-    private fun isMatchingConfigLine(line: String, configPath: String): Boolean {
-        val trimmed = line.trimStart()
-        if (!trimmed.contains(':')) return false
-
-        val key = trimmed.substringBefore(':').trim()
-        val pathSegments = configPath.split('.')
-        val lastSegment = pathSegments.last()
-
-        // Match exact key or handle nested paths
-        return key == lastSegment || key == configPath
+    @Suppress("UNCHECKED_CAST")
+    private fun <T> convertValue(path: String, raw: Any, default: T): T {
+        return when (default) {
+            is String -> raw.toString() as T
+            is Int -> when (raw) {
+                is Number -> raw.toInt()
+                is String -> raw.toIntOrNull() ?: default
+                else -> default
+            } as T
+            is Long -> when (raw) {
+                is Number -> raw.toLong()
+                is String -> raw.toLongOrNull() ?: default
+                else -> default
+            } as T
+            is Double -> when (raw) {
+                is Number -> raw.toDouble()
+                is String -> raw.toDoubleOrNull() ?: default
+                else -> default
+            } as T
+            is Float -> when (raw) {
+                is Number -> raw.toFloat()
+                is String -> raw.toFloatOrNull() ?: default
+                else -> default
+            } as T
+            is Boolean -> when (raw) {
+                is Boolean -> raw
+                is String -> when {
+                    raw.equals("true", ignoreCase = true) -> true
+                    raw.equals("false", ignoreCase = true) -> false
+                    else -> default
+                }
+                else -> default
+            } as T
+            is List<*> -> {
+                val list = raw as? List<*> ?: return default
+                if (default.firstOrNull() is String) {
+                    return list.map { it?.toString().orEmpty() } as T
+                }
+                list as T
+            }
+            else -> {
+                if (default == null) {
+                    raw as T
+                } else if (!default::class.java.isInstance(raw)) {
+                    plugin.logger.warning("Type mismatch at '$path', using default '$default'")
+                    default
+                } else {
+                    raw as T
+                }
+            }
+        }
     }
 
     protected fun <T> value(default: T): ConfigValue<T> {
-        // Note: This method relies on being called from a property getter
-        // The property must have @ConfigPath annotation
-        throw UnsupportedOperationException(
-            "Use value(path, default) instead or ensure property has @ConfigPath annotation"
-        )
+        return ConfigValue(this, null, default)
     }
 
     protected fun <T> value(path: String, default: T): ConfigValue<T> {
@@ -223,15 +219,28 @@ abstract class TypeSafeConfig(
 
 class ConfigValue<T>(
     private val config: TypeSafeConfig,
-    private val path: String,
+    private val explicitPath: String?,
     private val default: T
-) {
-    operator fun getValue(thisRef: Any?, property: KProperty<*>): T {
-        return config.get(path, default)
+) : ReadWriteProperty<Any?, T> {
+    private var resolvedPath: String? = null
+
+    operator fun provideDelegate(thisRef: Any?, property: KProperty<*>): ConfigValue<T> {
+        resolvedPath = config.bindProperty(property, explicitPath, default)
+        return this
     }
 
-    operator fun setValue(thisRef: Any?, property: KProperty<*>, value: T) {
-        config.set(path, value)
+    private fun path(property: KProperty<*>): String {
+        return resolvedPath ?: config.bindProperty(property, explicitPath, default).also {
+            resolvedPath = it
+        }
+    }
+
+    override operator fun getValue(thisRef: Any?, property: KProperty<*>): T {
+        return config.get(path(property), default)
+    }
+
+    override operator fun setValue(thisRef: Any?, property: KProperty<*>, value: T) {
+        config.set(path(property), value)
     }
 }
 

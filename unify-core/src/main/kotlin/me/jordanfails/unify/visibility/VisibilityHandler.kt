@@ -8,15 +8,25 @@ import kotlin.collections.iterator
 
 object VisibilityHandler {
 
-    private val adapters = LinkedHashMap<String, VisibilityAdapter>()
-    private val overrideHandlers = LinkedHashMap<String, OverrideHandler>()
+    private val adapters = ArrayList<VisibilityAdapter>()
+    private val overrideHandlers = ArrayList<OverrideHandler>()
 
-    fun registerAdapter(identifier: String, adapter: VisibilityAdapter) {
-        adapters[identifier] = adapter
+    private data class VisibilityDecision(
+        val source: Any,
+        val sourceType: String,
+        val name: String,
+        val weight: Int,
+        val canSee: Boolean
+    )
+
+    fun registerAdapter(adapter: VisibilityAdapter) {
+        adapters.add(adapter)
+        adapters.sortByDescending { it.weight }
     }
 
-    fun registerOverride(identifier: String, handler: OverrideHandler) {
-        overrideHandlers[identifier] = handler
+    fun registerOverride(handler: OverrideHandler) {
+        overrideHandlers.add(handler)
+        overrideHandlers.sortByDescending { it.weight }
     }
 
     fun update(player: Player) {
@@ -53,54 +63,75 @@ object VisibilityHandler {
     }
 
     private fun shouldSee(target: Player, viewer: Player): Boolean {
-        for (handler in overrideHandlers.values) {
-            if (handler.getAction(target, viewer) === OverrideAction.SHOW) {
-                return true
+        val decision = resolveDecision(target, viewer)
+        return decision?.canSee ?: true
+    }
+
+    private fun resolveDecision(target: Player, viewer: Player): VisibilityDecision? {
+        var topShow: VisibilityDecision? = null
+        var topHide: VisibilityDecision? = null
+
+        for (handler in overrideHandlers) {
+            val action = handler.getAction(target, viewer)
+            if (action == OverrideAction.SHOW) {
+                if (topShow == null || handler.weight > topShow?.weight ?: Int.MIN_VALUE) {
+                    topShow = VisibilityDecision(
+                        source = handler,
+                        sourceType = "Overriding Handler",
+                        name = handler.name,
+                        weight = handler.weight,
+                        canSee = true
+                    )
+                }
             }
         }
 
-        for (handler in adapters.values) {
-            if (handler.getAction(target, viewer) === VisibilityAction.HIDE) {
-                return false
+        for (handler in adapters) {
+            val action = handler.getAction(target, viewer)
+            if (action == VisibilityAction.HIDE) {
+                if (topHide == null || handler.weight > topHide?.weight ?: Int.MIN_VALUE) {
+                    topHide = VisibilityDecision(
+                        source = handler,
+                        sourceType = "Normal Handler",
+                        name = handler.name,
+                        weight = handler.weight,
+                        canSee = false
+                    )
+                }
             }
         }
 
-        return true
+        return when {
+            topShow == null && topHide == null -> null
+            topShow != null && (topHide == null || topShow.weight > topHide.weight) -> topShow
+            else -> topHide
+        }
     }
 
     fun getDebugInfo(target: Player, viewer: Player): List<String> {
         val debug = ArrayList<String>()
-        var canSee: Boolean? = null
+        val winningDecision = resolveDecision(target, viewer)
+        val canSee = winningDecision?.canSee ?: true
 
-        for ((key, handler) in overrideHandlers) {
+        for (handler in overrideHandlers) {
             val action = handler.getAction(target, viewer)
-            var color = ChatColor.GRAY
+            val color = if (winningDecision?.source === handler && action == OverrideAction.SHOW) ChatColor.GREEN else ChatColor.GRAY
 
-            if (action === OverrideAction.SHOW && canSee == null) {
-                canSee = true
-                color = ChatColor.GREEN
-            }
-
-            debug.add(color.toString() + "Overriding Handler: $key: $action")
+            debug.add("${color}Overriding Handler: ${handler.name} (${handler.weight}): $action")
         }
 
-        for ((key, handler) in adapters) {
+        for (handler in adapters) {
             val action = handler.getAction(target, viewer)
-            var color = ChatColor.GRAY
+            val color = if (winningDecision?.source === handler && action == VisibilityAction.HIDE) ChatColor.GREEN else ChatColor.GRAY
 
-            if (action === VisibilityAction.HIDE && canSee == null) {
-                canSee = false
-                color = ChatColor.GREEN
-            }
-
-            debug.add(color.toString() + "Normal Handler: $key: $action")
+            debug.add("${color}Normal Handler: ${handler.name} (${handler.weight}): $action")
         }
 
-        if (canSee == null) {
-            canSee = true
+        if (winningDecision != null) {
+            debug.add("${ChatColor.YELLOW}Winner: ${winningDecision.sourceType}: ${winningDecision.name} (${winningDecision.weight})")
         }
 
-        debug.add(ChatColor.AQUA.toString() + "Result: " + viewer.name + " " + (if (canSee) "can" else "cannot") + " see " + target.name)
+        debug.add("${ChatColor.AQUA}Result: ${viewer.name} ${if (canSee) "can" else "cannot"} see ${target.name}")
 
         return debug
     }

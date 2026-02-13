@@ -2,7 +2,6 @@ package me.jordanfails.unify.visibility
 
 import org.bukkit.entity.Player
 
-interface VisibilityAdapter {
-    fun getAction(toRefresh: Player, refreshFor: Player): VisibilityAction
-
+abstract class VisibilityAdapter(val name: String, val weight: Int) {
+    abstract fun getAction(toRefresh: Player, refreshFor: Player): VisibilityAction
 }

@@ -51,6 +51,11 @@ object HologramManager : Listener {
     fun get(id: String): UnifyHologram? {
         return holograms[id.lowercase()]
     }
+
+    fun getId(hologram: UnifyHologram): String? {
+        // holograms: Map<String, UnifyHologram>
+        return holograms.entries.find { it.value == hologram }?.key
+    }
     
     fun delete(id: String): Boolean {
         val hologram = holograms.remove(id.lowercase()) ?: return false

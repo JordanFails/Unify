@@ -4,35 +4,75 @@ import org.bukkit.plugin.Plugin
 
 class UnifyConfig(plugin: Plugin) : TypeSafeConfig(plugin) {
 
-    @ConfigPath("settings.debug-mode")
+    // This class uses explicit paths, so no @ConfigPath annotation is required.
     @ConfigNote("Enable debug mode for additional logging")
-    var debugMode: Boolean by value(false)
+    var debugMode: Boolean by value("settings.debug-mode", false)
 
-    @ConfigPath("settings.language")
     @ConfigNote("Default language for messages")
-    var language: String by value("en_US")
+    var language: String by value("settings.language", "en_US")
 
-    @ConfigPath("menu.default-size")
-    @ConfigNote("Default size for menus (must be multiple of 9, max 54)")
-    var defaultMenuSize: Int by value(27)
+    @ConfigNote("Enable auto-updating scoreboards")
+    var scoreboardsEnabled: Boolean by value("scoreboards.enabled", true)
 
-    @ConfigPath("menu.update-interval")
-    @ConfigNote("How often menus should update in ticks (20 ticks = 1 second)")
-    var menuUpdateInterval: Int by value(20)
+    @ConfigNote("How often scoreboards update in ticks")
+    var scoreboardsUpdateIntervalTicks: Int by value("scoreboards.update-interval-ticks", 20)
 
-    @ConfigPath("hologram.update-interval")
-    @ConfigNote("How often holograms should update in ticks")
-    var hologramUpdateInterval: Int by value(20)
+    @ConfigNote("Scoreboard title shown to players")
+    var scoreboardTitle: String by value("scoreboard.title", "&d&lHUB")
 
-    @ConfigPath("hologram.view-distance")
-    @ConfigNote("Maximum distance players can see holograms from (in blocks)")
-    var hologramViewDistance: Double by value(48.0)
+    @ConfigNote("Scoreboard lines shown top-to-bottom")
+    var scoreboardLines: List<String> by value(
+        "scoreboard.lines",
+        listOf(
+            "&fRank: &d<rank>",
+            "&fFriends Online: &d0",
+            "&fLevel: &d0",
+            "  &fProgress: &d<bar>",
+            "",
+            "&fLobby: &dGarden",
+            "&fPlayers: &d0/1000",
+            "",
+            "&eplay.etheriamc.net"
+        )
+    )
 
-    @ConfigPath("nametag.update-interval")
-    @ConfigNote("How often nametags should update in ticks")
-    var nametagUpdateInterval: Int by value(40)
+    @ConfigNote("Enable custom tab header/footer updates")
+    var tabEnabled: Boolean by value("tab.enabled", true)
 
-    @ConfigPath("features.enabled-modules")
-    @ConfigNote("List of enabled modules")
-    var enabledModules: List<String> by value(listOf("menus", "holograms", "nametags", "visibility"))
+    @ConfigNote("How often the tab list updates in ticks")
+    var tabUpdateIntervalTicks: Int by value("tab.update-interval-ticks", 40)
+
+    @ConfigNote("Tab list header lines")
+    var tabHeader: List<String> by value(
+        "tab.header",
+        listOf(
+            "",
+            "<gradient:light_purple:gold><bold>EtheriaMC</bold></gradient>",
+            "&7Welcome, &f{player}",
+            ""
+        )
+    )
+
+    @ConfigNote("Tab list footer lines")
+    var tabFooter: List<String> by value(
+        "tab.footer",
+        listOf(
+            "",
+            "&7Online: &d{online}&7/&d{max_players}",
+            "&eplay.etheriamc.net",
+            ""
+        )
+    )
+
+    @ConfigNote("Enable auto-updating nametags")
+    var nametagsEnabled: Boolean by value("nametags.enabled", true)
+
+    @ConfigNote("Restrict nametag packets by player name prefix")
+    var nametagPacketRestrictionEnabled: Boolean by value("nametags.packet-restriction", false)
+
+    @ConfigNote("Prefix that bypasses nametag packet restriction")
+    var nametagPacketRestrictionBypassPrefix: String by value(
+        "nametags.packet-restriction-bypass-prefix",
+        ""
+    )
 }

@@ -2,6 +2,6 @@ package me.jordanfails.unify.visibility
 
 import org.bukkit.entity.Player
 
-interface OverrideHandler {
-    fun getAction(toRefresh: Player, refreshFor: Player): OverrideAction
+abstract class OverrideHandler(val name: String, val weight: Int) {
+    abstract fun getAction(toRefresh: Player, refreshFor: Player): OverrideAction
 }

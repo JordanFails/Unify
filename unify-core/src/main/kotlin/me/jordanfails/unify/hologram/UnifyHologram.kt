@@ -163,6 +163,10 @@ class UnifyHologram(
             nms.showHologram(player, this)
         }
     }
+
+    fun getId(): String? {
+        return HologramManager.getId(this)
+    }
     
     // --- Text-only Helpers (backward compatibility) ---
     

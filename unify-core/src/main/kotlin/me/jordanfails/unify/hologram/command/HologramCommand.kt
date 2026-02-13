@@ -4,6 +4,7 @@ import co.aikar.commands.BaseCommand
 import co.aikar.commands.annotation.*
 import me.jordanfails.unify.hologram.HologramLine
 import me.jordanfails.unify.hologram.HologramManager
+import me.jordanfails.unify.hologram.UnifyHologram
 import me.jordanfails.unify.utils.CC
 import org.bukkit.Location
 import org.bukkit.Material
@@ -83,7 +84,8 @@ class HologramCommand : BaseCommand() {
     @Syntax("<id> <line#> <text>")
     @CommandCompletion("@holograms")
     @Description("Edit a specific line of a hologram")
-    fun onSetLine(sender: CommandSender, id: String, lineNumber: Int, text: String) {
+    fun onSetLine(sender: CommandSender, holo: UnifyHologram, lineNumber: Int, text: String) {
+        val id = HologramManager.getId(holo) ?: return
         val hologram = HologramManager.get(id)
         
         if (hologram == null) {
@@ -101,33 +103,34 @@ class HologramCommand : BaseCommand() {
         sender.sendMessage(CC.translate("&aSet line $lineNumber of '&e$id&a' to: $text"))
     }
     
-    @Subcommand("additem")
-    @Syntax("<id> <material>")
-    @CommandCompletion("@holograms @materials")
-    @Description("Add a floating item to a hologram")
-    fun onAddItem(sender: CommandSender, id: String, materialName: String) {
-        val hologram = HologramManager.get(id)
-        
-        if (hologram == null) {
-            sender.sendMessage(CC.translate("&cNo hologram found with ID '$id'."))
-            return
-        }
-        
-        val material = Material.matchMaterial(materialName.uppercase())
-        if (material == null) {
-            sender.sendMessage(CC.translate("&cInvalid material '$materialName'."))
-            return
-        }
-        
-        hologram.addItemLine(material)
-        sender.sendMessage(CC.translate("&aAdded floating item to hologram '&e$id&a': &f${material.name}"))
-    }
+//    @Subcommand("additem")
+//    @Syntax("<id> <material>")
+//    @CommandCompletion("@holograms @materials")
+//    @Description("Add a floating item to a hologram")
+//    fun onAddItem(sender: CommandSender, id: String, materialName: String) {
+//        val hologram = HologramManager.get(id)
+//
+//        if (hologram == null) {
+//            sender.sendMessage(CC.translate("&cNo hologram found with ID '$id'."))
+//            return
+//        }
+//
+//        val material = Material.matchMaterial(materialName.uppercase())
+//        if (material == null) {
+//            sender.sendMessage(CC.translate("&cInvalid material '$materialName'."))
+//            return
+//        }
+//
+//        hologram.addItemLine(material)
+//        sender.sendMessage(CC.translate("&aAdded floating item to hologram '&e$id&a': &f${material.name}"))
+//    }
     
     @Subcommand("setitem")
     @Syntax("<id> <line#> <material>")
     @CommandCompletion("@holograms")
     @Description("Set a hologram line to a floating item")
-    fun onSetItem(sender: CommandSender, id: String, lineNumber: Int, materialName: String) {
+    fun onSetItem(sender: CommandSender, holo: UnifyHologram, lineNumber: Int, materialName: String) {
+        val id = HologramManager.getId(holo) ?: return
         val hologram = HologramManager.get(id)
         
         if (hologram == null) {
@@ -155,7 +158,9 @@ class HologramCommand : BaseCommand() {
     @Syntax("<id> <line#> <true|false>")
     @CommandCompletion("@holograms")
     @Description("Toggle spinning for an item line")
-    fun onSetSpin(sender: CommandSender, id: String, lineNumber: Int, spin: Boolean) {
+    fun onSetSpin(sender: CommandSender, holo: UnifyHologram, lineNumber: Int, spin: Boolean) {
+        val id = HologramManager.getId(holo) ?: return
+
         val hologram = HologramManager.get(id)
         
         if (hologram == null) {
@@ -184,7 +189,8 @@ class HologramCommand : BaseCommand() {
     @Syntax("<id> <line#>")
     @CommandCompletion("@holograms")
     @Description("Remove a specific line from a hologram")
-    fun onRemoveLine(sender: CommandSender, id: String, lineNumber: Int) {
+    fun onRemoveLine(sender: CommandSender, holo: UnifyHologram, lineNumber: Int) {
+        val id = HologramManager.getId(holo) ?: return
         val hologram = HologramManager.get(id)
         
         if (hologram == null) {
@@ -206,13 +212,8 @@ class HologramCommand : BaseCommand() {
     @Syntax("<id> [x] [y] [z]")
     @CommandCompletion("@holograms")
     @Description("Move a hologram to a location")
-    fun onTeleport(player: Player, id: String, @Optional x: Double?, @Optional y: Double?, @Optional z: Double?) {
-        val hologram = HologramManager.get(id)
-        
-        if (hologram == null) {
-            player.sendMessage(CC.translate("&cNo hologram found with ID '$id'."))
-            return
-        }
+    fun onTeleport(player: Player, holo: UnifyHologram, @Optional x: Double?, @Optional y: Double?, @Optional z: Double?) {
+        val id = HologramManager.getId(holo)
         
         val location = if (x != null && y != null && z != null) {
             Location(player.world, x, y, z)
@@ -220,7 +221,7 @@ class HologramCommand : BaseCommand() {
             player.location
         }
         
-        hologram.teleport(location)
+        holo.teleport(location)
         player.sendMessage(CC.translate("&aTeleported hologram '&e$id&a' to ${location.x.toInt()}, ${location.y.toInt()}, ${location.z.toInt()}."))
     }
     
@@ -228,13 +229,9 @@ class HologramCommand : BaseCommand() {
     @Syntax("<id>")
     @CommandCompletion("@holograms")
     @Description("View information about a hologram")
-    fun onInfo(sender: CommandSender, id: String) {
-        val hologram = HologramManager.get(id)
-        
-        if (hologram == null) {
-            sender.sendMessage(CC.translate("&cNo hologram found with ID '$id'."))
-            return
-        }
+    fun onInfo(sender: CommandSender, holo: UnifyHologram) {
+        val hologram = holo
+        val id = HologramManager.getId(holo)
         
         sender.sendMessage(CC.translate("&6&lHologram: &e$id"))
         sender.sendMessage(CC.translate("&7Location: &f${hologram.location.world?.name} ${hologram.location.x.toInt()}, ${hologram.location.y.toInt()}, ${hologram.location.z.toInt()}"))
@@ -281,5 +278,16 @@ class HologramCommand : BaseCommand() {
             val distance = hologram.location.distance(player.location).toInt()
             player.sendMessage(CC.translate("  &e$id &7- ${distance}m away"))
         }
+    }
+
+    @Subcommand("movehere|tphere")
+    @Description("Move specific holograms to your location")
+    @CommandCompletion("@holograms")
+    fun onTphere(player: Player, @Name("hologram")hologram: UnifyHologram) {
+        val playerLoc = player.location
+
+        hologram.teleport(playerLoc)
+        player.sendMessage(CC.translate("&aTeleported hologram '&e${hologram.getId()}&a' to ${playerLoc.x.toInt()}, ${playerLoc.y.toInt()}, ${playerLoc.z.toInt()}."))
+
     }
 }

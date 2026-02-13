@@ -4,6 +4,7 @@ import org.bukkit.plugin.Plugin
 
 class ExampleUsage(plugin: Plugin) : TypeSafeConfig(plugin, "example.yml") {
 
+    // Annotation-driven path mapping (value(default) + @ConfigPath)
     @ConfigPath("server.name")
     @ConfigNote("The display name of your server")
     var serverName: String by value("My Awesome Server")
@@ -12,35 +13,39 @@ class ExampleUsage(plugin: Plugin) : TypeSafeConfig(plugin, "example.yml") {
     @ConfigNote("Maximum number of players allowed")
     var maxPlayers: Int by value(100)
 
-    @ConfigPath("server.motd")
+    // Explicit path mapping (value(path, default)) without @ConfigPath
     @ConfigNote("Message of the day shown in server list")
-    var motd: String by value("Welcome to the server!")
+    var motd: String by value("server.motd", "Welcome to the server!")
 
-    @ConfigPath("gameplay.pvp-enabled")
     @ConfigNote("Enable or disable PvP combat")
-    var pvpEnabled: Boolean by value(true)
+    var pvpEnabled: Boolean by value("gameplay.pvp-enabled", true)
 
-    @ConfigPath("gameplay.difficulty")
     @ConfigNote("Server difficulty level")
-    var difficulty: String by value("NORMAL")
+    var difficulty: String by value("gameplay.difficulty", "NORMAL")
 
-    @ConfigPath("gameplay.spawn-protection-radius")
     @ConfigNote("Radius in blocks around spawn where building is protected")
-    var spawnProtectionRadius: Int by value(16)
+    var spawnProtectionRadius: Int by value("gameplay.spawn-protection-radius", 16)
 
-    @ConfigPath("economy.starting-balance")
     @ConfigNote("Amount of money new players start with")
-    var startingBalance: Double by value(100.0)
+    var startingBalance: Double by value("economy.starting-balance", 100.0)
 
-    @ConfigPath("economy.currency-symbol")
     @ConfigNote("Symbol to display for currency")
-    var currencySymbol: String by value("$")
+    var currencySymbol: String by value("economy.currency-symbol", "$")
 
-    @ConfigPath("features.enabled-worlds")
     @ConfigNote("List of worlds where features are enabled")
-    var enabledWorlds: List<String> by value(listOf("world", "world_nether", "world_the_end"))
+    var enabledWorlds: List<String> by value(
+        "features.enabled-worlds",
+        listOf("world", "world_nether", "world_the_end")
+    )
 
-    @ConfigPath("features.disabled-commands")
     @ConfigNote("Commands that should be disabled")
-    var disabledCommands: List<String> by value(listOf("/stop", "/reload"))
+    var disabledCommands: List<String> by value(
+        "features.disabled-commands",
+        listOf("/stop", "/reload")
+    )
+
+    fun updateMotd(newMotd: String) {
+        motd = newMotd
+        save()
+    }
 }
