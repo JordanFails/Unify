@@ -29,25 +29,10 @@ sealed class HologramLine {
     companion object {
         /**
          * Parse a string into a HologramLine.
-         * - If it starts with "ITEM:" or "[ITEM:", parse as an item
-         * - Otherwise, treat as text
+         * Holograms are text-only, so this always returns a text line.
          */
         fun parse(input: String): HologramLine {
-            val trimmed = input.trim()
-            
-            // Check for item format: [ITEM:MATERIAL] or ITEM:MATERIAL
-            val itemPattern = Regex("^\\[?ITEM:([A-Z_0-9]+)]?$", RegexOption.IGNORE_CASE)
-            val match = itemPattern.find(trimmed)
-            
-            if (match != null) {
-                val materialName = match.groupValues[1].uppercase()
-                val material = Material.matchMaterial(materialName)
-                if (material != null) {
-                    return Item(material)
-                }
-            }
-            
-            return Text(trimmed)
+            return Text(input.trim())
         }
         
         fun text(text: String): HologramLine = Text(text)

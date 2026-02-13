@@ -4,9 +4,7 @@ import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.utils.CC
 import org.bukkit.Bukkit
 import org.bukkit.Location
-import org.bukkit.Material
 import org.bukkit.entity.Player
-import org.bukkit.inventory.ItemStack
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
@@ -84,38 +82,6 @@ class UnifyHologram(
             _lines[index] = translateLine(line)
             val newType = _lines[index]::class
             if (oldType != newType) forceRespawn() else refresh()
-            HologramManager.markDirty()
-        }
-    }
-    
-    // --- Item Line Methods ---
-    
-    fun addItemLine(material: Material, spin: Boolean = true) {
-        _lines.add(HologramLine.Item(material, spin))
-        refresh()
-        HologramManager.markDirty()
-    }
-    
-    fun addItemLine(itemStack: ItemStack, spin: Boolean = true) {
-        _lines.add(HologramLine.Item(itemStack, spin))
-        refresh()
-        HologramManager.markDirty()
-    }
-    
-    fun setItemLine(index: Int, material: Material, spin: Boolean = true) {
-        if (index in _lines.indices) {
-            val wasText = _lines[index] is HologramLine.Text
-            _lines[index] = HologramLine.Item(material, spin)
-            if (wasText) forceRespawn() else refresh()
-            HologramManager.markDirty()
-        }
-    }
-    
-    fun setItemLine(index: Int, itemStack: ItemStack, spin: Boolean = true) {
-        if (index in _lines.indices) {
-            val wasText = _lines[index] is HologramLine.Text
-            _lines[index] = HologramLine.Item(itemStack, spin)
-            if (wasText) forceRespawn() else refresh()
             HologramManager.markDirty()
         }
     }

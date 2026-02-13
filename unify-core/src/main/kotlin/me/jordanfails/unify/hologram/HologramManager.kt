@@ -3,7 +3,6 @@ package me.jordanfails.unify.hologram
 import me.jordanfails.unify.UnifyCore
 import org.bukkit.Bukkit
 import org.bukkit.Location
-import org.bukkit.Material
 import org.bukkit.configuration.file.YamlConfiguration
 import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
@@ -11,7 +10,6 @@ import org.bukkit.event.Listener
 import org.bukkit.event.player.PlayerChangedWorldEvent
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerQuitEvent
-import org.bukkit.inventory.ItemStack
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
@@ -120,18 +118,11 @@ object HologramManager : Listener {
                 config.set("$path.location.z", hologram.location.z)
                 
                 // Save lines
-                val linesList = hologram.lines.map { line ->
-                    when (line) {
-                        is HologramLine.Text -> mapOf(
-                            "type" to "text",
-                            "content" to line.text
-                        )
-                        is HologramLine.Item -> mapOf(
-                            "type" to "item",
-                            "material" to line.itemStack.type.name,
-                            "spin" to line.spin
-                        )
-                    }
+                val linesList = hologram.lines.filterIsInstance<HologramLine.Text>().map { line ->
+                    mapOf(
+                        "type" to "text",
+                        "content" to line.text
+                    )
                 }
                 config.set("$path.lines", linesList)
             }
@@ -174,12 +165,7 @@ object HologramManager : Listener {
                             val content = lineMap["content"] as? String ?: ""
                             lines.add(HologramLine.Text(content))
                         }
-                        "item" -> {
-                            val materialName = lineMap["material"] as? String ?: continue
-                            val material = Material.matchMaterial(materialName) ?: Material.STONE
-                            val spin = lineMap["spin"] as? Boolean ?: true
-                            lines.add(HologramLine.Item(ItemStack(material), spin))
-                        }
+                        "item" -> Unit // Item lines are intentionally no longer supported.
                     }
                 }
                 

@@ -2,12 +2,10 @@ package me.jordanfails.unify.hologram.command
 
 import co.aikar.commands.BaseCommand
 import co.aikar.commands.annotation.*
-import me.jordanfails.unify.hologram.HologramLine
 import me.jordanfails.unify.hologram.HologramManager
 import me.jordanfails.unify.hologram.UnifyHologram
 import me.jordanfails.unify.utils.CC
 import org.bukkit.Location
-import org.bukkit.Material
 import org.bukkit.command.CommandSender
 import org.bukkit.entity.Player
 
@@ -22,10 +20,7 @@ class HologramCommand : BaseCommand() {
         sender.sendMessage(CC.translate("&e/hologram create <id> [text] &7- Create a new hologram"))
         sender.sendMessage(CC.translate("&e/hologram delete <id> &7- Delete a hologram"))
         sender.sendMessage(CC.translate("&e/hologram addline <id> <text> &7- Add a text line"))
-        sender.sendMessage(CC.translate("&e/hologram additem <id> <material> &7- Add a floating item"))
         sender.sendMessage(CC.translate("&e/hologram setline <id> <#> <text> &7- Edit a line"))
-        sender.sendMessage(CC.translate("&e/hologram setitem <id> <#> <material> &7- Set line to item"))
-        sender.sendMessage(CC.translate("&e/hologram setspin <id> <#> <true|false> &7- Toggle item spin"))
         sender.sendMessage(CC.translate("&e/hologram removeline <id> <#> &7- Remove a line"))
         sender.sendMessage(CC.translate("&e/hologram tp <id> [x y z] &7- Move hologram"))
         sender.sendMessage(CC.translate("&e/hologram info <id> &7- View hologram info"))
@@ -103,88 +98,6 @@ class HologramCommand : BaseCommand() {
         sender.sendMessage(CC.translate("&aSet line $lineNumber of '&e$id&a' to: $text"))
     }
     
-//    @Subcommand("additem")
-//    @Syntax("<id> <material>")
-//    @CommandCompletion("@holograms @materials")
-//    @Description("Add a floating item to a hologram")
-//    fun onAddItem(sender: CommandSender, id: String, materialName: String) {
-//        val hologram = HologramManager.get(id)
-//
-//        if (hologram == null) {
-//            sender.sendMessage(CC.translate("&cNo hologram found with ID '$id'."))
-//            return
-//        }
-//
-//        val material = Material.matchMaterial(materialName.uppercase())
-//        if (material == null) {
-//            sender.sendMessage(CC.translate("&cInvalid material '$materialName'."))
-//            return
-//        }
-//
-//        hologram.addItemLine(material)
-//        sender.sendMessage(CC.translate("&aAdded floating item to hologram '&e$id&a': &f${material.name}"))
-//    }
-    
-    @Subcommand("setitem")
-    @Syntax("<id> <line#> <material>")
-    @CommandCompletion("@holograms")
-    @Description("Set a hologram line to a floating item")
-    fun onSetItem(sender: CommandSender, holo: UnifyHologram, lineNumber: Int, materialName: String) {
-        val id = HologramManager.getId(holo) ?: return
-        val hologram = HologramManager.get(id)
-        
-        if (hologram == null) {
-            sender.sendMessage(CC.translate("&cNo hologram found with ID '$id'."))
-            return
-        }
-        
-        val lineIndex = lineNumber - 1
-        if (lineIndex < 0 || lineIndex >= hologram.lines.size) {
-            sender.sendMessage(CC.translate("&cLine $lineNumber doesn't exist. This hologram has ${hologram.lines.size} lines."))
-            return
-        }
-        
-        val material = Material.matchMaterial(materialName.uppercase())
-        if (material == null) {
-            sender.sendMessage(CC.translate("&cInvalid material '$materialName'."))
-            return
-        }
-        
-        hologram.setItemLine(lineIndex, material)
-        sender.sendMessage(CC.translate("&aSet line $lineNumber of '&e$id&a' to floating item: &f${material.name}"))
-    }
-    
-    @Subcommand("setspin")
-    @Syntax("<id> <line#> <true|false>")
-    @CommandCompletion("@holograms")
-    @Description("Toggle spinning for an item line")
-    fun onSetSpin(sender: CommandSender, holo: UnifyHologram, lineNumber: Int, spin: Boolean) {
-        val id = HologramManager.getId(holo) ?: return
-
-        val hologram = HologramManager.get(id)
-        
-        if (hologram == null) {
-            sender.sendMessage(CC.translate("&cNo hologram found with ID '$id'."))
-            return
-        }
-        
-        val lineIndex = lineNumber - 1
-        if (lineIndex < 0 || lineIndex >= hologram.lines.size) {
-            sender.sendMessage(CC.translate("&cLine $lineNumber doesn't exist. This hologram has ${hologram.lines.size} lines."))
-            return
-        }
-        
-        val line = hologram.lines[lineIndex]
-        if (line !is HologramLine.Item) {
-            sender.sendMessage(CC.translate("&cLine $lineNumber is not an item line."))
-            return
-        }
-        
-        hologram.setLine(lineIndex, HologramLine.Item(line.itemStack, spin))
-        val spinText = if (spin) "&aenabled" else "&cdisabled"
-        sender.sendMessage(CC.translate("&aSpin $spinText for line $lineNumber of '&e$id&a'."))
-    }
-    
     @Subcommand("removeline")
     @Syntax("<id> <line#>")
     @CommandCompletion("@holograms")
@@ -230,14 +143,13 @@ class HologramCommand : BaseCommand() {
     @CommandCompletion("@holograms")
     @Description("View information about a hologram")
     fun onInfo(sender: CommandSender, holo: UnifyHologram) {
-        val hologram = holo
         val id = HologramManager.getId(holo)
         
         sender.sendMessage(CC.translate("&6&lHologram: &e$id"))
-        sender.sendMessage(CC.translate("&7Location: &f${hologram.location.world?.name} ${hologram.location.x.toInt()}, ${hologram.location.y.toInt()}, ${hologram.location.z.toInt()}"))
-        sender.sendMessage(CC.translate("&7Viewers: &f${hologram.viewers.size}"))
-        sender.sendMessage(CC.translate("&7Lines (${hologram.lines.size}):"))
-        hologram.lines.forEachIndexed { index, line ->
+        sender.sendMessage(CC.translate("&7Location: &f${holo.location.world?.name} ${holo.location.x.toInt()}, ${holo.location.y.toInt()}, ${holo.location.z.toInt()}"))
+        sender.sendMessage(CC.translate("&7Viewers: &f${holo.viewers.size}"))
+        sender.sendMessage(CC.translate("&7Lines (${holo.lines.size}):"))
+        holo.lines.forEachIndexed { index, line ->
             sender.sendMessage(CC.translate("  &e${index + 1}. &r$line"))
         }
     }

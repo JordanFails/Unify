@@ -1,5 +1,7 @@
 package me.jordanfails.unify.utils
 
+import net.kyori.adventure.text.minimessage.MiniMessage
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
 import org.apache.commons.lang.StringEscapeUtils
 import org.apache.commons.lang.StringUtils
 import org.bukkit.ChatColor
@@ -217,43 +219,50 @@ object CC {
     // Translation Utilities
     // ------------------------------------------------------------------------
 
+    private val miniMessage: MiniMessage = MiniMessage.miniMessage()
+    private val legacySerializer: LegacyComponentSerializer = LegacyComponentSerializer.legacySection()
+    private val basicMiniTags = mapOf(
+        "black" to "&0",
+        "dark_blue" to "&1",
+        "dark_green" to "&2",
+        "dark_aqua" to "&3",
+        "dark_red" to "&4",
+        "dark_purple" to "&5",
+        "gold" to "&6",
+        "gray" to "&7",
+        "grey" to "&7",
+        "dark_gray" to "&8",
+        "dark_grey" to "&8",
+        "blue" to "&9",
+        "green" to "&a",
+        "aqua" to "&b",
+        "red" to "&c",
+        "light_purple" to "&d",
+        "yellow" to "&e",
+        "white" to "&f",
+        "bold" to "&l",
+        "italic" to "&o",
+        "underlined" to "&n",
+        "strikethrough" to "&m",
+        "obfuscated" to "&k",
+        "reset" to "&r"
+    )
+
     /**
      * Translates color codes including custom hex (#RRGGBB) and MiniMessage tags.
-     * 
-     * Supports:
-     * - Legacy color codes: &a, &b, &c, etc.
-     * - Hex colors: #RRGGBB
-     * - MiniMessage: <red>, <rainbow>, <gradient>, etc.
-     * 
-     * MiniMessage is only available on Paper 1.16.5+ servers. On older servers,
-     * MiniMessage tags will be ignored.
      */
     fun translate(input: String): String {
-        // First check if MiniMessage is available and if input contains MiniMessage tags
+        // Parse MiniMessage first, then serialize to section-colored legacy text for NMS compatibility.
         if (input.contains('<') && input.contains('>')) {
             try {
-                // Try to use MiniMessage (only available on Paper servers)
-                val miniMessage = Class.forName("net.kyori.adventure.text.minimessage.MiniMessage")
-                    .getDeclaredMethod("miniMessage")
-                    .invoke(null)
-                
-                val deserializeMethod = miniMessage.javaClass.getMethod("deserialize", String::class.java)
-                val component = deserializeMethod.invoke(miniMessage, input)
-                
-                // Convert to legacy format for compatibility
-                val legacySerializer = Class.forName("net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer")
-                    .getDeclaredMethod("legacySection")
-                    .invoke(null)
-                
-                val serializeMethod = legacySerializer.javaClass.getMethod("serialize", Class.forName("net.kyori.adventure.text.Component"))
-                return serializeMethod.invoke(legacySerializer, component) as String
-            } catch (e: Exception) {
-                // MiniMessage not available or parsing failed, fall back to legacy translation
+                return legacySerializer.serialize(miniMessage.deserialize(input))
+            } catch (_: Exception) {
+                // Invalid MiniMessage input, fall back to legacy translation below.
             }
         }
         
         // Legacy translation with hex support
-        var msg = input
+        var msg = convertBasicMiniTagsToLegacy(input)
         val hexPattern = Pattern.compile("#[a-fA-F0-9]{6}")
         var matcher = hexPattern.matcher(msg)
 
@@ -265,6 +274,15 @@ object CC {
         }
 
         return ChatColor.translateAlternateColorCodes('&', msg)
+    }
+
+    private fun convertBasicMiniTagsToLegacy(input: String): String {
+        var output = input
+        output = output.replace(Regex("</\\s*[^>]+\\s*>", RegexOption.IGNORE_CASE), "&r")
+        for ((tag, code) in basicMiniTags) {
+            output = output.replace(Regex("<\\s*$tag\\s*>", RegexOption.IGNORE_CASE), code)
+        }
+        return output
     }
 
     /**

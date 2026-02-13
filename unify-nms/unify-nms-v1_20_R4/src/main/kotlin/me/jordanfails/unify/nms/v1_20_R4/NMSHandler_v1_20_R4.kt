@@ -371,7 +371,7 @@ class NMSHandler_v1_20_R4 : NMSHandler {
                     is HologramLine.Text -> {
                         val armorStand = ArmorStand(world, hologram.location.x, currentY, hologram.location.z)
                         armorStand.id = entityId
-                        armorStand.customName = Component.literal(line.text)
+                        armorStand.customName = parseText(line.text)
                         armorStand.isCustomNameVisible = true
                         armorStand.isInvisible = true
                         armorStand.isNoGravity = true
@@ -428,7 +428,7 @@ class NMSHandler_v1_20_R4 : NMSHandler {
                     is HologramLine.Text -> {
                         val armorStand = ArmorStand(world, hologram.location.x, currentY, hologram.location.z)
                         armorStand.id = entityId
-                        armorStand.customName = Component.literal(line.text)
+                        armorStand.customName = parseText(line.text)
                         armorStand.isCustomNameVisible = true
                         armorStand.isInvisible = true
                         armorStand.isMarker = true
@@ -469,7 +469,7 @@ class NMSHandler_v1_20_R4 : NMSHandler {
     }
     
     private fun parseText(text: String): net.minecraft.network.chat.Component {
-        val converted = convertLegacyToMiniMessage(text)
+        val converted = convertLegacyToMiniMessage(text.replace('§', '&'))
         val adventureComponent = net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().deserialize(converted)
         return io.papermc.paper.adventure.PaperAdventure.asVanilla(adventureComponent)
     }

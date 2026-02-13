@@ -299,7 +299,7 @@ class NMSHandler_v1_21_R1 : NMSHandler {
                     is HologramLine.Text -> {
                         val armorStand = ArmorStand(world, hologram.location.x, currentY, hologram.location.z)
                         armorStand.id = entityId
-                        armorStand.customName = Component.literal(line.text)
+                        armorStand.customName = parseText(line.text)
                         armorStand.isCustomNameVisible = true
                         armorStand.isInvisible = true
                         armorStand.isNoGravity = true
@@ -381,7 +381,7 @@ class NMSHandler_v1_21_R1 : NMSHandler {
                     is HologramLine.Text -> {
                         val armorStand = ArmorStand(world, hologram.location.x, currentY, hologram.location.z)
                         armorStand.id = entityId
-                        armorStand.customName = Component.literal(line.text)
+                        armorStand.customName = parseText(line.text)
                         armorStand.isCustomNameVisible = true
                         armorStand.isInvisible = true
                         armorStand.isMarker = true
@@ -542,7 +542,7 @@ class NMSHandler_v1_21_R1 : NMSHandler {
     }
     
     private fun parseText(text: String): Component {
-        val converted = convertLegacyToMiniMessage(text)
+        val converted = convertLegacyToMiniMessage(text.replace('§', '&'))
         val adventureComponent = MiniMessage.miniMessage().deserialize(converted)
         return PaperAdventure.asVanilla(adventureComponent)
     }
