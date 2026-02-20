@@ -325,7 +325,7 @@ class NMSHandler_v1_12_R1 : NMSHandler {
                         val armorStand = EntityArmorStand(world)
                         setEntityId(armorStand, entityId)
                         armorStand.setLocation(hologram.location.x, currentY, hologram.location.z, 0f, 0f)
-                        armorStand.customName = line.text
+                        armorStand.customName = me.jordanfails.unify.utils.CC.translate(line.text)
                         armorStand.customNameVisible = true
                         armorStand.isInvisible = true
                         armorStand.isNoGravity = true
@@ -376,7 +376,7 @@ class NMSHandler_v1_12_R1 : NMSHandler {
                         val armorStand = EntityArmorStand(world)
                         setEntityId(armorStand, entityId)
                         armorStand.setLocation(hologram.location.x, currentY, hologram.location.z, 0f, 0f)
-                        armorStand.customName = line.text
+                        armorStand.customName = me.jordanfails.unify.utils.CC.translate(line.text)
                         armorStand.customNameVisible = true
                         armorStand.isInvisible = true
                         armorStand.isMarker = true

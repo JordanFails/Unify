@@ -1,16 +1,19 @@
 package me.jordanfails.unify.tab
 
+import com.google.common.primitives.Ints
 import me.jordanfails.unify.UnifyCore
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
+import java.util.*
+import java.util.concurrent.ConcurrentHashMap
 
 object TabHandler {
 
+    private val playerTabs = ConcurrentHashMap<UUID, TabInfo>()
+    private var providers = ArrayList<TabProvider>()
+
     private var enabled: Boolean = false
     var updateInterval: Int = 40
-
-    private var headerLines = listOf<String>()
-    private var footerLines = listOf<String>()
 
     fun initialLoad() {
         val config = UnifyCore.instance.config
@@ -21,26 +24,63 @@ object TabHandler {
         }
 
         updateInterval = config.getInt("tab.update-interval-ticks", updateInterval).coerceAtLeast(1)
-        headerLines = config.getStringList("tab.header")
-        footerLines = config.getStringList("tab.footer")
+
+        registerProvider(TabProvider.DefaultTabProvider())
 
         Bukkit.getScheduler().runTaskTimerAsynchronously(UnifyCore.instance, Runnable {
             for (player in Bukkit.getOnlinePlayers()) {
-                sendTab(player)
+                reloadPlayer(player)
             }
         }, 20L, updateInterval.toLong())
     }
 
-    fun sendTab(player: Player) {
-        if (!enabled) return
-        val nms = UnifyCore.instance.nms ?: return
+    fun registerProvider(newProvider: TabProvider) {
+        providers.add(newProvider)
+        providers.sortWith { a, b -> Ints.compare(b.weight, a.weight) }
+    }
 
-        val header = replacePlaceholders(headerLines.joinToString("\n"), player)
-        val footer = replacePlaceholders(footerLines.joinToString("\n"), player)
+    fun initiatePlayer(player: Player) {
+        reloadPlayer(player)
+    }
+
+    fun removePlayer(player: Player) {
+        playerTabs.remove(player.uniqueId)
+    }
+
+    fun sendTab(player: Player) {
+        reloadPlayer(player)
+    }
+
+    fun reloadPlayer(player: Player) {
+        if (!enabled) return
+
+        var provided: TabInfo? = null
+        var providerIndex = 0
+
+        while (provided == null && providerIndex < providers.size) {
+            provided = providers[providerIndex++].fetchTab(player)
+        }
+
+        if (provided == null) {
+            return
+        }
+
+        val rendered = TabInfo(
+            replacePlaceholders(provided.header, player),
+            replacePlaceholders(provided.footer, player)
+        )
+
+        val currentTab = playerTabs[player.uniqueId]
+        if (currentTab != null && currentTab == rendered) {
+            return
+        }
+
+        val nms = UnifyCore.instance.nms ?: return
+        playerTabs[player.uniqueId] = rendered
 
         Bukkit.getScheduler().runTask(UnifyCore.instance, Runnable {
             if (!player.isOnline) return@Runnable
-            nms.sendTabHeaderFooter(player, header, footer)
+            nms.sendTabHeaderFooter(player, rendered.header, rendered.footer)
         })
     }
 

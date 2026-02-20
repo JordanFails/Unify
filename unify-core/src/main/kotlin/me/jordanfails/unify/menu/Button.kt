@@ -125,6 +125,11 @@ abstract class Button {
         }
 
         @JvmStatic
+        fun placeholder(xMaterial: XMaterial): Button {
+            return placeholder(xMaterial.parseMaterial()!!, "")
+        }
+
+        @JvmStatic
         fun placeholder(material: Material, title: String): Button {
             return placeholder(material, 0.toByte(), title)
         }

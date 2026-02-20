@@ -162,7 +162,9 @@ object HologramManager : Listener {
                     val type = lineMap["type"] as? String ?: continue
                     when (type) {
                         "text" -> {
-                            val content = lineMap["content"] as? String ?: ""
+                            val content = (lineMap["content"] as? String)
+                                ?: (lineMap["contains"] as? String)
+                                ?: ""
                             lines.add(HologramLine.Text(content))
                         }
                         "item" -> Unit // Item lines are intentionally no longer supported.

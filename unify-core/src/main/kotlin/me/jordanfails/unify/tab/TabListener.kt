@@ -5,6 +5,7 @@ import org.bukkit.Bukkit
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
 import org.bukkit.event.player.PlayerJoinEvent
+import org.bukkit.event.player.PlayerQuitEvent
 
 object TabListener : Listener {
 
@@ -12,8 +13,13 @@ object TabListener : Listener {
     fun onJoin(event: PlayerJoinEvent) {
         Bukkit.getScheduler().runTaskLater(UnifyCore.instance, Runnable {
             if (event.player.isOnline) {
-                TabHandler.sendTab(event.player)
+                TabHandler.initiatePlayer(event.player)
             }
         }, 10L)
+    }
+
+    @EventHandler
+    fun onQuit(event: PlayerQuitEvent) {
+        TabHandler.removePlayer(event.player)
     }
 }

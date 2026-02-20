@@ -316,7 +316,7 @@ class NMSHandler_v1_16_R3 : NMSHandler {
                     is HologramLine.Text -> {
                         val armorStand = EntityArmorStand(world, hologram.location.x, currentY, hologram.location.z)
                         armorStand.e(entityId)
-                        armorStand.customName = CraftChatMessage.fromStringOrNull(line.text)
+                        armorStand.customName = CraftChatMessage.fromStringOrNull(me.jordanfails.unify.utils.CC.translate(line.text))
                         armorStand.customNameVisible = true
                         armorStand.isInvisible = true
                         armorStand.isNoGravity = true
@@ -366,7 +366,7 @@ class NMSHandler_v1_16_R3 : NMSHandler {
                     is HologramLine.Text -> {
                         val armorStand = EntityArmorStand(world, hologram.location.x, currentY, hologram.location.z)
                         armorStand.e(entityId)
-                        armorStand.customName = CraftChatMessage.fromStringOrNull(line.text)
+                        armorStand.customName = CraftChatMessage.fromStringOrNull(me.jordanfails.unify.utils.CC.translate(line.text))
                         armorStand.customNameVisible = true
                         armorStand.isInvisible = true
                         armorStand.isMarker = true
@@ -414,4 +414,3 @@ class NMSHandler_v1_16_R3 : NMSHandler {
         }
     }
 }
-

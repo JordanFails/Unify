@@ -368,7 +368,7 @@ class NMSHandler_v1_8_R3 : NMSHandler {
                     armorStand.d(entry.entityId)
                     armorStand.isInvisible = true
                     armorStand.setGravity(false)
-                    armorStand.setSmall(true)
+                    armorStand.isSmall = true
                     armorStand.setLocation(entry.x, y, entry.z, yaw, 0f)
 
                     connection.sendPacket(PacketPlayOutEntityTeleport(armorStand))
@@ -429,9 +429,9 @@ class NMSHandler_v1_8_R3 : NMSHandler {
                 when (line) {
                     is HologramLine.Text -> {
                         armorStand.setLocation(hologram.location.x, currentY, hologram.location.z, 0f, 0f)
-                        armorStand.customName = line.text
+                        armorStand.customName = CC.translate(line.text)
                         armorStand.customNameVisible = true
-                        armorStand.setSmall(true)
+                        armorStand.isSmall = true
                         
                         val spawnPacket = PacketPlayOutSpawnEntityLiving(armorStand)
                         connection.sendPacket(spawnPacket)
@@ -441,7 +441,7 @@ class NMSHandler_v1_8_R3 : NMSHandler {
                         // Small armor stand with item on head - offset by 0.6 for small stand height
                         armorStand.setLocation(hologram.location.x, currentY - 0.6, hologram.location.z, 0f, 0f)
                         armorStand.customNameVisible = false
-                        armorStand.setSmall(true)
+                        armorStand.isSmall = true
                         
                         val spawnPacket = PacketPlayOutSpawnEntityLiving(armorStand)
                         connection.sendPacket(spawnPacket)
@@ -502,9 +502,9 @@ class NMSHandler_v1_8_R3 : NMSHandler {
                 when (line) {
                     is HologramLine.Text -> {
                         armorStand.setLocation(hologram.location.x, currentY, hologram.location.z, 0f, 0f)
-                        armorStand.customName = line.text
+                        armorStand.customName = CC.translate(line.text)
                         armorStand.customNameVisible = true
-                        armorStand.setSmall(true)
+                        armorStand.isSmall = true
                         
                         val metaPacket = PacketPlayOutEntityMetadata(entityId, armorStand.dataWatcher, true)
                         connection.sendPacket(metaPacket)
@@ -516,7 +516,7 @@ class NMSHandler_v1_8_R3 : NMSHandler {
                     is HologramLine.Item -> {
                         armorStand.setLocation(hologram.location.x, currentY - 0.6, hologram.location.z, 0f, 0f)
                         armorStand.customNameVisible = false
-                        armorStand.setSmall(true)
+                        armorStand.isSmall = true
                         
                         val metaPacket = PacketPlayOutEntityMetadata(entityId, armorStand.dataWatcher, true)
                         connection.sendPacket(metaPacket)

@@ -1,7 +1,6 @@
 package me.jordanfails.unify.hologram
 
 import me.jordanfails.unify.UnifyCore
-import me.jordanfails.unify.utils.CC
 import org.bukkit.Bukkit
 import org.bukkit.Location
 import org.bukkit.entity.Player
@@ -34,7 +33,7 @@ class UnifyHologram(
     
     private fun translateLine(line: HologramLine): HologramLine {
         return when (line) {
-            is HologramLine.Text -> HologramLine.Text(CC.translate(line.text))
+            is HologramLine.Text -> line
             is HologramLine.Item -> line
         }
     }
@@ -48,7 +47,7 @@ class UnifyHologram(
     // --- Text Line Methods ---
     
     fun addLine(text: String) {
-        _lines.add(HologramLine.Text(CC.translate(text)))
+        _lines.add(HologramLine.Text(text))
         refresh()
         HologramManager.markDirty()
     }
@@ -70,7 +69,7 @@ class UnifyHologram(
     fun setLine(index: Int, text: String) {
         if (index in _lines.indices) {
             val wasItem = _lines[index] is HologramLine.Item
-            _lines[index] = HologramLine.Text(CC.translate(text))
+            _lines[index] = HologramLine.Text(text)
             if (wasItem) forceRespawn() else refresh()
             HologramManager.markDirty()
         }

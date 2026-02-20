@@ -440,7 +440,7 @@ class NMSHandler_v1_9_R2 : NMSHandler {
                 when (line) {
                     is HologramLine.Text -> {
                         armorStand.setLocation(hologram.location.x, currentY, hologram.location.z, 0f, 0f)
-                        armorStand.customName = line.text
+                        armorStand.customName = me.jordanfails.unify.utils.CC.translate(line.text)
                         armorStand.customNameVisible = true
                         armorStand.setSmall(true)
                         armorStand.setMarker(true)
@@ -520,7 +520,7 @@ class NMSHandler_v1_9_R2 : NMSHandler {
                 when (line) {
                     is HologramLine.Text -> {
                         armorStand.setLocation(hologram.location.x, currentY, hologram.location.z, 0f, 0f)
-                        armorStand.customName = line.text
+                        armorStand.customName = me.jordanfails.unify.utils.CC.translate(line.text)
                         armorStand.customNameVisible = true
                         armorStand.setSmall(true)
                         armorStand.isMarker = true

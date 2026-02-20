@@ -563,6 +563,24 @@ class NMSHandler_v1_21_R1 : NMSHandler {
         while (i < text.length) {
             if (i + 1 < text.length && text[i] == '&') {
                 val code = text[i + 1].lowercaseChar()
+                if (code == 'x' && i + 13 < text.length) {
+                    val hex = StringBuilder(6)
+                    var valid = true
+                    for (j in 0 until 6) {
+                        val ampIndex = i + 2 + (j * 2)
+                        val hexIndex = ampIndex + 1
+                        if (text[ampIndex] != '&' || !text[hexIndex].isDigit() && text[hexIndex].lowercaseChar() !in 'a'..'f') {
+                            valid = false
+                            break
+                        }
+                        hex.append(text[hexIndex])
+                    }
+                    if (valid) {
+                        result.append("<#").append(hex).append(">")
+                        i += 14
+                        continue
+                    }
+                }
                 val color = colorMap[code]
                 val format = formatMap[code]
                 when {
