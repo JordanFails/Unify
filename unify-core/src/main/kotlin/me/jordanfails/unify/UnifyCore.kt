@@ -16,6 +16,8 @@ import co.aikar.commands.PaperCommandManager
 import me.jordanfails.unify.acf.ACFCommandController
 import me.jordanfails.unify.hologram.HologramManager
 import me.jordanfails.unify.hologram.command.HologramCommand
+import me.jordanfails.unify.npc.NPCManager
+import me.jordanfails.unify.npc.command.NPCCommand
 import me.jordanfails.unify.visibility.VisibilityHandler
 import me.jordanfails.unify.visibility.VisibilityListeners
 import me.jordanfails.unify.visibility.VanishVisibilityAdapter
@@ -42,10 +44,12 @@ class UnifyCore : JavaPlugin() {
         setupTab()
         setupMenu()
         setupHolograms()
+        setupNPCs()
         setupCommands()
     }
 
     override fun onDisable() {
+        NPCManager.disable()
         HologramManager.disable()
     }
 
@@ -74,10 +78,15 @@ class UnifyCore : JavaPlugin() {
 
     private fun setupCommands() {
         commandManager.registerCommand(HologramCommand())
+        commandManager.registerCommand(NPCCommand())
     }
 
     private fun setupHolograms() {
         HologramManager.enable(this)
+    }
+
+    private fun setupNPCs() {
+        NPCManager.enable(this)
     }
 
     private fun setupScoreboards() {

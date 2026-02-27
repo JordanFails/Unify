@@ -2,9 +2,12 @@ package me.jordanfails.unify.nms
 
 import me.jordanfails.unify.bossbar.UnifyBossBar
 import me.jordanfails.unify.hologram.UnifyHologram
+import me.jordanfails.unify.npc.UnifyNPC
+import org.bukkit.Location
 import org.bukkit.entity.Player
 import org.bukkit.inventory.Inventory
 import org.bukkit.inventory.ItemStack
+import java.util.UUID
 
 /**
  * NMSHandler defines version‑specific methods Unify calls.
@@ -132,4 +135,10 @@ interface NMSHandler {
      * Text supports MiniMessage on modern servers, legacy color codes on all.
      */
     fun sendTabHeaderFooter(player: Player, header: String, footer: String)
+
+    // --- Player NPC API (optional, version-specific) ---
+    fun spawnPlayerNpc(id: String, location: Location, skinType: UnifyNPC.SkinType?, skinValue: String?): UUID? = null
+    fun despawnPlayerNpc(uuid: UUID) { }
+    fun teleportPlayerNpc(uuid: UUID, location: Location): Boolean = false
+    fun hidePlayerNpcFromTab(viewer: Player, npcUuid: UUID) { }
 }
