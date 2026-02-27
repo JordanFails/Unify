@@ -1,28 +1,37 @@
 package me.jordanfails.unify.nms.v1_20_R4
 
+import com.mojang.authlib.GameProfile
+import com.mojang.authlib.properties.Property
 import me.jordanfails.unify.bossbar.BossBarColor
 import me.jordanfails.unify.bossbar.BossBarStyle
 import me.jordanfails.unify.bossbar.UnifyBossBar
 import me.jordanfails.unify.hologram.HologramLine
 import me.jordanfails.unify.hologram.UnifyHologram
 import me.jordanfails.unify.nms.NMSHandler
+import me.jordanfails.unify.npc.UnifyNPC
 import net.minecraft.ChatFormatting
 import net.minecraft.network.chat.Component
 import net.minecraft.network.protocol.game.ClientboundAddEntityPacket
+import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket
 import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket
 import net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket
 import net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket
+import net.minecraft.server.level.ClientInformation
+import net.minecraft.server.level.ServerPlayer
+import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.decoration.ArmorStand
 import net.minecraft.world.entity.item.ItemEntity
 import net.minecraft.world.scores.PlayerTeam
 import net.minecraft.world.scores.Scoreboard
 import net.minecraft.world.scores.Team
 import org.bukkit.Bukkit
+import org.bukkit.Location
 import org.bukkit.block.BlockState
 import org.bukkit.boss.BarColor
 import org.bukkit.boss.BarStyle
 import org.bukkit.boss.BossBar
+import org.bukkit.craftbukkit.CraftServer
 import org.bukkit.craftbukkit.CraftWorld
 import org.bukkit.craftbukkit.entity.CraftPlayer
 import org.bukkit.craftbukkit.inventory.CraftItemStack
@@ -30,10 +39,13 @@ import org.bukkit.entity.Player
 import org.bukkit.inventory.Inventory
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.meta.Damageable
+import java.nio.charset.StandardCharsets
+import java.util.Base64
 import java.util.UUID
 
 @Suppress("unused")
 class NMSHandler_v1_20_R4 : NMSHandler {
+    private val npcPlayers = mutableMapOf<UUID, ServerPlayer>()
     
     override fun sendTitle(
         player: Player,
@@ -103,6 +115,102 @@ class NMSHandler_v1_20_R4 : NMSHandler {
     override fun isCustomInventory(inventory: Inventory): Boolean {
         val holder = inventory.holder
         return holder == null || holder is Player || holder !is BlockState
+    }
+
+    override fun spawnPlayerNpc(id: String, location: Location, skinType: UnifyNPC.SkinType?, skinValue: String?): UUID? {
+        return try {
+            val bukkitWorld = location.world ?: return null
+            val world = (bukkitWorld as CraftWorld).handle
+            val server = (Bukkit.getServer() as CraftServer).server
+
+            val profileUuid = UUID.randomUUID()
+            val profileName = sanitizeNpcName(if (skinType == UnifyNPC.SkinType.NAME) skinValue else id)
+            val profile = GameProfile(profileUuid, profileName)
+            applySkin(profile, skinType, skinValue)
+
+            val npc = ServerPlayer(server, world, profile, ClientInformation.createDefault())
+            npc.absMoveTo(location.x, location.y, location.z, location.yaw, location.pitch)
+            npc.noPhysics = true
+            npc.setNoGravity(true)
+            npc.isInvulnerable = true
+
+            world.addNewPlayer(npc)
+            val bukkitEntity = npc.bukkitEntity
+            bukkitEntity.isCollidable = false
+            bukkitEntity.canPickupItems = false
+            bukkitEntity.isSilent = true
+            bukkitEntity.isInvulnerable = true
+
+            npcPlayers[profileUuid] = npc
+            Bukkit.getOnlinePlayers().forEach { viewer -> hidePlayerNpcFromTab(viewer, profileUuid) }
+            profileUuid
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    override fun despawnPlayerNpc(uuid: UUID) {
+        val npc = npcPlayers.remove(uuid) ?: return
+        try {
+            npc.remove(Entity.RemovalReason.DISCARDED)
+            Bukkit.getOnlinePlayers().forEach { viewer ->
+                val craftViewer = viewer as CraftPlayer
+                craftViewer.handle.connection.send(ClientboundPlayerInfoRemovePacket(listOf(uuid)))
+                craftViewer.handle.connection.send(ClientboundRemoveEntitiesPacket(npc.id))
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    override fun teleportPlayerNpc(uuid: UUID, location: Location): Boolean {
+        val npc = npcPlayers[uuid] ?: return false
+        return try {
+            npc.bukkitEntity.teleport(location)
+            npc.noPhysics = true
+            npc.isNoGravity = true
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    override fun hidePlayerNpcFromTab(viewer: Player, npcUuid: UUID) {
+        try {
+            (viewer as CraftPlayer).handle.connection.send(ClientboundPlayerInfoRemovePacket(listOf(npcUuid)))
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun sanitizeNpcName(source: String?): String {
+        val raw = (source ?: "npc").trim().ifEmpty { "npc" }
+        return raw.replace(Regex("[^A-Za-z0-9_]"), "_").take(16).ifEmpty { "npc" }
+    }
+
+    private fun applySkin(profile: GameProfile, skinType: UnifyNPC.SkinType?, skinValue: String?) {
+        if (skinType == null || skinValue.isNullOrBlank()) {
+            return
+        }
+
+        when (skinType) {
+            UnifyNPC.SkinType.NAME -> {
+                val onlineSource = Bukkit.getPlayerExact(skinValue) as? CraftPlayer ?: return
+                val sourceProfile = onlineSource.handle.gameProfile
+                sourceProfile.properties.get("textures").forEach { texture ->
+                    profile.properties.put("textures", Property("textures", texture.value, texture.signature))
+                }
+            }
+            UnifyNPC.SkinType.URL -> {
+                val json = "{\"textures\":{\"SKIN\":{\"url\":\"$skinValue\"}}}"
+                val encoded = Base64.getEncoder().encodeToString(json.toByteArray(StandardCharsets.UTF_8))
+                profile.properties.put("textures", Property("textures", encoded))
+            }
+            UnifyNPC.SkinType.BASE64 -> {
+                profile.properties.put("textures", Property("textures", skinValue))
+            }
+        }
     }
 
     private fun getTeamName(target: Player): String {
