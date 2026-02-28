@@ -10,6 +10,7 @@ import me.jordanfails.unify.hologram.UnifyHologram
 import me.jordanfails.unify.nms.NMSHandler
 import me.jordanfails.unify.npc.UnifyNPC
 import net.minecraft.server.v1_12_R1.*
+import me.jordanfails.unify.UnifyCore
 import org.bukkit.Bukkit
 import org.bukkit.Location
 import org.bukkit.block.BlockState
@@ -121,7 +122,12 @@ class NMSHandler_v1_12_R1 : NMSHandler {
 
             world.addEntity(npc)
             npcPlayers[profileUuid] = npc
-            Bukkit.getOnlinePlayers().forEach { viewer -> hidePlayerNpcFromTab(viewer, profileUuid) }
+            Bukkit.getOnlinePlayers().forEach { viewer ->
+                sendPlayerNpcSpawnPackets(viewer, npc)
+                Bukkit.getScheduler().runTaskLater(UnifyCore.instance, Runnable {
+                    hidePlayerNpcFromTab(viewer, profileUuid)
+                }, 20L)
+            }
             profileUuid
         } catch (e: Exception) {
             e.printStackTrace()
@@ -163,6 +169,18 @@ class NMSHandler_v1_12_R1 : NMSHandler {
             (viewer as CraftPlayer).handle.playerConnection.sendPacket(
                 PacketPlayOutPlayerInfo(PacketPlayOutPlayerInfo.EnumPlayerInfoAction.REMOVE_PLAYER, npc)
             )
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun sendPlayerNpcSpawnPackets(viewer: Player, npc: EntityPlayer) {
+        try {
+            val connection = (viewer as CraftPlayer).handle.playerConnection
+            connection.sendPacket(
+                PacketPlayOutPlayerInfo(PacketPlayOutPlayerInfo.EnumPlayerInfoAction.ADD_PLAYER, npc)
+            )
+            connection.sendPacket(PacketPlayOutNamedEntitySpawn(npc))
+            connection.sendPacket(PacketPlayOutEntityMetadata(npc.id, npc.dataWatcher, true))
         } catch (_: Exception) {
         }
     }

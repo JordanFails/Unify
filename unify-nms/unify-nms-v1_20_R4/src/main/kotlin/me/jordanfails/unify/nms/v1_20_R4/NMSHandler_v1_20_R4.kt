@@ -2,6 +2,7 @@ package me.jordanfails.unify.nms.v1_20_R4
 
 import com.mojang.authlib.GameProfile
 import com.mojang.authlib.properties.Property
+import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.bossbar.BossBarColor
 import me.jordanfails.unify.bossbar.BossBarStyle
 import me.jordanfails.unify.bossbar.UnifyBossBar
@@ -10,7 +11,10 @@ import me.jordanfails.unify.hologram.UnifyHologram
 import me.jordanfails.unify.nms.NMSHandler
 import me.jordanfails.unify.npc.UnifyNPC
 import net.minecraft.ChatFormatting
+import net.minecraft.network.Connection
 import net.minecraft.network.chat.Component
+import net.minecraft.network.protocol.Packet
+import net.minecraft.network.protocol.PacketFlow
 import net.minecraft.network.protocol.game.ClientboundAddEntityPacket
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket
@@ -19,6 +23,8 @@ import net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket
 import net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket
 import net.minecraft.server.level.ClientInformation
 import net.minecraft.server.level.ServerPlayer
+import net.minecraft.server.network.CommonListenerCookie
+import net.minecraft.server.network.ServerGamePacketListenerImpl
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.decoration.ArmorStand
 import net.minecraft.world.entity.item.ItemEntity
@@ -130,6 +136,7 @@ class NMSHandler_v1_20_R4 : NMSHandler {
 
             val npc = ServerPlayer(server, world, profile, ClientInformation.createDefault())
             npc.absMoveTo(location.x, location.y, location.z, location.yaw, location.pitch)
+            attachFakeConnection(server, npc, profile)
             npc.noPhysics = true
             npc.setNoGravity(true)
             npc.isInvulnerable = true
@@ -142,7 +149,10 @@ class NMSHandler_v1_20_R4 : NMSHandler {
             bukkitEntity.isInvulnerable = true
 
             npcPlayers[profileUuid] = npc
-            Bukkit.getOnlinePlayers().forEach { viewer -> hidePlayerNpcFromTab(viewer, profileUuid) }
+            Bukkit.getOnlinePlayers().forEach { viewer ->
+                sendPlayerNpcSpawnPackets(viewer, npc)
+                scheduleHidePlayerNpcFromTab(viewer, profileUuid, 20L)
+            }
             profileUuid
         } catch (e: Exception) {
             e.printStackTrace()
@@ -167,9 +177,9 @@ class NMSHandler_v1_20_R4 : NMSHandler {
     override fun teleportPlayerNpc(uuid: UUID, location: Location): Boolean {
         val npc = npcPlayers[uuid] ?: return false
         return try {
-            npc.bukkitEntity.teleport(location)
+            npc.absMoveTo(location.x, location.y, location.z, location.yaw, location.pitch)
             npc.noPhysics = true
-            npc.isNoGravity = true
+            npc.setNoGravity(true)
             true
         } catch (e: Exception) {
             e.printStackTrace()
@@ -182,6 +192,65 @@ class NMSHandler_v1_20_R4 : NMSHandler {
             (viewer as CraftPlayer).handle.connection.send(ClientboundPlayerInfoRemovePacket(listOf(npcUuid)))
         } catch (_: Exception) {
         }
+    }
+
+    private fun scheduleHidePlayerNpcFromTab(viewer: Player, npcUuid: UUID, delayTicks: Long) {
+        Bukkit.getScheduler().runTaskLater(UnifyCore.instance, Runnable {
+            hidePlayerNpcFromTab(viewer, npcUuid)
+        }, delayTicks)
+    }
+
+    private fun sendPlayerNpcSpawnPackets(viewer: Player, npc: ServerPlayer) {
+        try {
+            val craftViewer = viewer as CraftPlayer
+            val connection = craftViewer.handle.connection
+            createPlayerInfoAddPacket(npc)?.let { connection.send(it) }
+
+            val addPacket = ClientboundAddEntityPacket(npc)
+            connection.send(addPacket)
+
+            val dataValues = npc.entityData.packAll()
+            if (dataValues != null) {
+                connection.send(ClientboundSetEntityDataPacket(npc.id, dataValues))
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun createPlayerInfoAddPacket(npc: ServerPlayer): Packet<*>? {
+        return runCatching {
+            val packetClass = Class.forName("net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket")
+            val createInitializing = packetClass.methods.firstOrNull {
+                it.name == "createPlayerInitializing" && it.parameterTypes.size == 1
+            }
+            if (createInitializing != null) {
+                return@runCatching createInitializing.invoke(null, listOf(npc)) as? Packet<*>
+            }
+
+            val actionClass = Class.forName("net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket\$Action")
+            val addAction = actionClass.getMethod("valueOf", String::class.java).invoke(null, "ADD_PLAYER") as Enum<*>
+            val actions = java.util.EnumSet::class.java.getMethod("of", Enum::class.java).invoke(null, addAction)
+            val ctor = packetClass.constructors.firstOrNull { constructor ->
+                val types = constructor.parameterTypes
+                types.size == 2 && types[0].isAssignableFrom(actions.javaClass)
+            } ?: return@runCatching null
+            ctor.newInstance(actions, listOf(npc)) as? Packet<*>
+        }.getOrNull()
+    }
+
+    private fun attachFakeConnection(
+        server: net.minecraft.server.MinecraftServer,
+        npc: ServerPlayer,
+        profile: GameProfile,
+    ) {
+        if (npc.connection != null) return
+        val networkConnection = Connection(PacketFlow.SERVERBOUND)
+        val cookie = CommonListenerCookie.createInitial(profile, false)
+        val fakeListener = object : ServerGamePacketListenerImpl(server, networkConnection, npc, cookie) {
+            override fun send(packet: Packet<*>) {
+            }
+        }
+        npc.connection = fakeListener
     }
 
     private fun sanitizeNpcName(source: String?): String {

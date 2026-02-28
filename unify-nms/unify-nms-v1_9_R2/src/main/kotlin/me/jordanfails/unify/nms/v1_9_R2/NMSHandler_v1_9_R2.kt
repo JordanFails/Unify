@@ -159,7 +159,12 @@ class NMSHandler_v1_9_R2 : NMSHandler {
             world.addEntity(npc)
 
             npcPlayers[profileUuid] = npc
-            Bukkit.getOnlinePlayers().forEach { viewer -> hidePlayerNpcFromTab(viewer, profileUuid) }
+            Bukkit.getOnlinePlayers().forEach { viewer ->
+                sendPlayerNpcSpawnPackets(viewer, npc)
+                Bukkit.getScheduler().runTaskLater(UnifyCore.instance, Runnable {
+                    hidePlayerNpcFromTab(viewer, profileUuid)
+                }, 20L)
+            }
             profileUuid
         } catch (e: Exception) {
             e.printStackTrace()
@@ -200,6 +205,18 @@ class NMSHandler_v1_9_R2 : NMSHandler {
             (viewer as CraftPlayer).handle.playerConnection.sendPacket(
                 PacketPlayOutPlayerInfo(PacketPlayOutPlayerInfo.EnumPlayerInfoAction.REMOVE_PLAYER, npc)
             )
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun sendPlayerNpcSpawnPackets(viewer: Player, npc: EntityPlayer) {
+        try {
+            val connection = (viewer as CraftPlayer).handle.playerConnection
+            connection.sendPacket(
+                PacketPlayOutPlayerInfo(PacketPlayOutPlayerInfo.EnumPlayerInfoAction.ADD_PLAYER, npc)
+            )
+            connection.sendPacket(PacketPlayOutNamedEntitySpawn(npc))
+            connection.sendPacket(PacketPlayOutEntityMetadata(npc.id, npc.dataWatcher, true))
         } catch (_: Exception) {
         }
     }

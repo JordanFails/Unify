@@ -8,7 +8,6 @@ import me.jordanfails.unify.utils.SkullBuilder
 import org.bukkit.Bukkit
 import org.bukkit.Location
 import org.bukkit.entity.Entity
-import org.bukkit.entity.EntityType
 import org.bukkit.entity.LivingEntity
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
@@ -59,14 +58,9 @@ class UnifyNPC internal constructor(
             return npcUuid
         }
 
-        val world = spawnLocation.world ?: return null
-        val spawnedEntity = world.spawnEntity(spawnLocation, EntityType.VILLAGER) as? LivingEntity ?: return null
-        configureEntity(plugin, spawnedEntity)
-        applySkin(spawnedEntity)
-        entityUuid = spawnedEntity.uniqueId
         nmsPlayerNpc = false
-        updateHologram()
-        return spawnedEntity.uniqueId
+        plugin.logger.warning("Failed to spawn player NPC '$id' at ${spawnLocation.world?.name} ${spawnLocation.x}, ${spawnLocation.y}, ${spawnLocation.z}")
+        return null
     }
 
     internal fun despawn() {
@@ -168,7 +162,9 @@ class UnifyNPC internal constructor(
     internal fun addViewer(player: Player) {
         val uuid = entityUuid
         if (nmsPlayerNpc && uuid != null) {
-            NMSHandlerFactory.getHandler()?.hidePlayerNpcFromTab(player, uuid)
+            Bukkit.getScheduler().runTaskLater(UnifyCore.instance, Runnable {
+                NMSHandlerFactory.getHandler()?.hidePlayerNpcFromTab(player, uuid)
+            }, 20L)
         }
         val npcHologram = hologram ?: return
         if (spawnLocation.world == player.world) {
