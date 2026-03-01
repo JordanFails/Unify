@@ -97,11 +97,8 @@ class UnifyNPC internal constructor(
             val location = spawnLocation.clone()
             val nms = NMSHandlerFactory.getHandler()
             val oldUuid = entityUuid
-            val newUuid = nms?.spawnPlayerNpc(id, location, skinType, skinValue)
-            if (newUuid != null && oldUuid != null && oldUuid != newUuid) {
-                nms.despawnPlayerNpc(oldUuid)
-                entityUuid = newUuid
-            }
+            if (oldUuid != null) nms?.despawnPlayerNpc(oldUuid)
+            entityUuid = nms?.spawnPlayerNpc(id, location, skinType, skinValue)
         } else {
             applySkin(getEntity())
         }
@@ -114,11 +111,8 @@ class UnifyNPC internal constructor(
             val location = spawnLocation.clone()
             val nms = NMSHandlerFactory.getHandler()
             val oldUuid = entityUuid
-            val newUuid = nms?.spawnPlayerNpc(id, location, null, null)
-            if (newUuid != null && oldUuid != null && oldUuid != newUuid) {
-                nms.despawnPlayerNpc(oldUuid)
-                entityUuid = newUuid
-            }
+            if (oldUuid != null) nms?.despawnPlayerNpc(oldUuid)
+            entityUuid = nms?.spawnPlayerNpc(id, location, null, null)
         } else {
             applySkin(getEntity())
         }
@@ -162,9 +156,7 @@ class UnifyNPC internal constructor(
     internal fun addViewer(player: Player) {
         val uuid = entityUuid
         if (nmsPlayerNpc && uuid != null) {
-            Bukkit.getScheduler().runTaskLater(UnifyCore.instance, Runnable {
-                NMSHandlerFactory.getHandler()?.hidePlayerNpcFromTab(player, uuid)
-            }, 20L)
+            NMSHandlerFactory.getHandler()?.showPlayerNpcToViewer(player, uuid)
         }
         val npcHologram = hologram ?: return
         if (spawnLocation.world == player.world) {

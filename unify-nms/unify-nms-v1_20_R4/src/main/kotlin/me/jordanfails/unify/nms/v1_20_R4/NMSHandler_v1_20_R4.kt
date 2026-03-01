@@ -200,6 +200,12 @@ class NMSHandler_v1_20_R4 : NMSHandler {
         }, delayTicks)
     }
 
+    override fun showPlayerNpcToViewer(viewer: Player, npcUuid: UUID) {
+        val npc = npcPlayers[npcUuid] ?: return
+        sendPlayerNpcSpawnPackets(viewer, npc)
+        scheduleHidePlayerNpcFromTab(viewer, npcUuid, 20L)
+    }
+
     private fun sendPlayerNpcSpawnPackets(viewer: Player, npc: ServerPlayer) {
         try {
             val craftViewer = viewer as CraftPlayer
@@ -213,8 +219,19 @@ class NMSHandler_v1_20_R4 : NMSHandler {
             if (dataValues != null) {
                 connection.send(ClientboundSetEntityDataPacket(npc.id, dataValues))
             }
+
+            sendHideNpcNametag(connection, npc)
         } catch (_: Exception) {
         }
+    }
+
+    private fun sendHideNpcNametag(connection: net.minecraft.server.network.ServerGamePacketListenerImpl, npc: ServerPlayer) {
+        val teamName = "npc_nt_${npc.uuid.toString().take(8)}"
+        val dummyScoreboard = Scoreboard()
+        val team = PlayerTeam(dummyScoreboard, teamName)
+        team.nameTagVisibility = Team.Visibility.NEVER
+        connection.send(ClientboundSetPlayerTeamPacket.createAddOrModifyPacket(team, true))
+        connection.send(ClientboundSetPlayerTeamPacket.createPlayerPacket(team, npc.scoreboardName, ClientboundSetPlayerTeamPacket.Action.ADD))
     }
 
     private fun createPlayerInfoAddPacket(npc: ServerPlayer): Packet<*>? {
@@ -247,8 +264,9 @@ class NMSHandler_v1_20_R4 : NMSHandler {
         val networkConnection = Connection(PacketFlow.SERVERBOUND)
         val cookie = CommonListenerCookie.createInitial(profile, false)
         val fakeListener = object : ServerGamePacketListenerImpl(server, networkConnection, npc, cookie) {
-            override fun send(packet: Packet<*>) {
-            }
+            override fun send(packet: Packet<*>) {}
+            override fun tick() {}
+            override fun isAcceptingMessages() = true
         }
         npc.connection = fakeListener
     }

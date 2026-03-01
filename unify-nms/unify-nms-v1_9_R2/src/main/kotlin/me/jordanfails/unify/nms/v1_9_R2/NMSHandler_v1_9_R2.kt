@@ -209,6 +209,14 @@ class NMSHandler_v1_9_R2 : NMSHandler {
         }
     }
 
+    override fun showPlayerNpcToViewer(viewer: Player, npcUuid: UUID) {
+        val npc = npcPlayers[npcUuid] ?: return
+        sendPlayerNpcSpawnPackets(viewer, npc)
+        Bukkit.getScheduler().runTaskLater(UnifyCore.instance, Runnable {
+            hidePlayerNpcFromTab(viewer, npcUuid)
+        }, 20L)
+    }
+
     private fun sendPlayerNpcSpawnPackets(viewer: Player, npc: EntityPlayer) {
         try {
             val connection = (viewer as CraftPlayer).handle.playerConnection
@@ -217,8 +225,30 @@ class NMSHandler_v1_9_R2 : NMSHandler {
             )
             connection.sendPacket(PacketPlayOutNamedEntitySpawn(npc))
             connection.sendPacket(PacketPlayOutEntityMetadata(npc.id, npc.dataWatcher, true))
+            sendHideNpcNametag(connection, npc)
         } catch (_: Exception) {
         }
+    }
+
+    private fun sendHideNpcNametag(connection: PlayerConnection, npc: EntityPlayer) {
+        val teamName = "npc_nt_${npc.uniqueID.toString().take(8)}"
+        val packet = PacketPlayOutScoreboardTeam()
+        setField(packet, "a", teamName)
+        setField(packet, "b", teamName)
+        setField(packet, "c", "")
+        setField(packet, "d", "")
+        setField(packet, "e", "never")
+        setField(packet, "f", 0)
+        setField(packet, "h", 0)
+        setField(packet, "i", 0)
+        connection.sendPacket(packet)
+        val addPacket = PacketPlayOutScoreboardTeam()
+        setField(addPacket, "a", teamName)
+        @Suppress("UNCHECKED_CAST")
+        val members = getField(addPacket, "g") as? MutableCollection<String> ?: return
+        members.add(npc.getName())
+        setField(addPacket, "h", 3)
+        connection.sendPacket(addPacket)
     }
 
     private fun sanitizeNpcName(source: String?): String {

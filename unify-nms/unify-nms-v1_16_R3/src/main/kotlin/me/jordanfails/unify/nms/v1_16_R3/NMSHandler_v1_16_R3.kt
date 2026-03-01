@@ -172,6 +172,14 @@ class NMSHandler_v1_16_R3 : NMSHandler {
         }
     }
 
+    override fun showPlayerNpcToViewer(viewer: Player, npcUuid: UUID) {
+        val npc = npcPlayers[npcUuid] ?: return
+        sendPlayerNpcSpawnPackets(viewer, npc)
+        Bukkit.getScheduler().runTaskLater(UnifyCore.instance, Runnable {
+            hidePlayerNpcFromTab(viewer, npcUuid)
+        }, 20L)
+    }
+
     private fun sendPlayerNpcSpawnPackets(viewer: Player, npc: EntityPlayer) {
         try {
             val connection = (viewer as CraftPlayer).handle.playerConnection
@@ -180,8 +188,33 @@ class NMSHandler_v1_16_R3 : NMSHandler {
             )
             connection.sendPacket(PacketPlayOutNamedEntitySpawn(npc))
             connection.sendPacket(PacketPlayOutEntityMetadata(npc.id, npc.dataWatcher, true))
+            sendHideNpcNametag(connection, npc)
         } catch (_: Exception) {
         }
+    }
+
+    private fun sendHideNpcNametag(connection: PlayerConnection, npc: EntityPlayer) {
+        val teamName = "npc_nt_${npc.uniqueID.toString().take(8)}"
+        val displayComp = IChatBaseComponent.ChatSerializer.a("{\"text\":\"$teamName\"}")
+            ?: ChatComponentText(teamName)
+        val emptyComp: IChatBaseComponent = ChatComponentText("")
+        val packet = PacketPlayOutScoreboardTeam()
+        setField(packet, "a", teamName)
+        setField(packet, "b", displayComp)
+        setField(packet, "c", emptyComp)
+        setField(packet, "d", emptyComp)
+        setField(packet, "e", "never")
+        setField(packet, "f", "always")
+        setField(packet, "g", 21)
+        setField(packet, "i", 0)
+        connection.sendPacket(packet)
+        val addPacket = PacketPlayOutScoreboardTeam()
+        setField(addPacket, "a", teamName)
+        @Suppress("UNCHECKED_CAST")
+        val members = getField(addPacket, "h") as? MutableCollection<String> ?: return
+        members.add(npc.getProfile().name)
+        setField(addPacket, "i", 3)
+        connection.sendPacket(addPacket)
     }
 
     private fun sanitizeNpcName(source: String?): String {

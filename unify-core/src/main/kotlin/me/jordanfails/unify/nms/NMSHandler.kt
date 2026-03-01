@@ -141,4 +141,5 @@ interface NMSHandler {
     fun despawnPlayerNpc(uuid: UUID) { }
     fun teleportPlayerNpc(uuid: UUID, location: Location): Boolean = false
     fun hidePlayerNpcFromTab(viewer: Player, npcUuid: UUID) { }
+    fun showPlayerNpcToViewer(viewer: Player, npcUuid: UUID) { }
 }
