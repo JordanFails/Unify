@@ -102,15 +102,7 @@ class HologramCommand : BaseCommand() {
     @Syntax("<id> <line#>")
     @CommandCompletion("@holograms")
     @Description("Remove a specific line from a hologram")
-    fun onRemoveLine(sender: CommandSender, holo: UnifyHologram, lineNumber: Int) {
-        val id = HologramManager.getId(holo) ?: return
-        val hologram = HologramManager.get(id)
-        
-        if (hologram == null) {
-            sender.sendMessage(CC.translate("&cNo hologram found with ID '$id'."))
-            return
-        }
-        
+    fun onRemoveLine(sender: CommandSender, hologram: UnifyHologram, lineNumber: Int) {
         val lineIndex = lineNumber - 1
         if (lineIndex < 0 || lineIndex >= hologram.lines.size) {
             sender.sendMessage(CC.translate("&cLine $lineNumber doesn't exist."))
@@ -118,7 +110,7 @@ class HologramCommand : BaseCommand() {
         }
         
         hologram.removeLine(lineIndex)
-        sender.sendMessage(CC.translate("&aRemoved line $lineNumber from '&e$id&a'."))
+        sender.sendMessage(CC.translate("&aRemoved line $lineNumber from '&e${hologram.getId()}&a'."))
     }
     
     @Subcommand("tp|teleport|move")

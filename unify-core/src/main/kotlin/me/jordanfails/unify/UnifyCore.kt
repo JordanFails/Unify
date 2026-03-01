@@ -1,5 +1,6 @@
 package me.jordanfails.unify
 
+import co.aikar.commands.BukkitCommandExecutionContext
 import me.jordanfails.unify.utils.Tasks
 import me.jordanfails.unify.menu.listener.ButtonListeners
 import me.jordanfails.unify.menu.menus.listener.SelectItemListeners
@@ -18,9 +19,12 @@ import me.jordanfails.unify.hologram.HologramManager
 import me.jordanfails.unify.hologram.command.HologramCommand
 import me.jordanfails.unify.npc.NPCManager
 import me.jordanfails.unify.npc.command.NPCCommand
+import me.jordanfails.unify.utils.command.CommonCommandContext
 import me.jordanfails.unify.visibility.VisibilityHandler
 import me.jordanfails.unify.visibility.VisibilityListeners
 import me.jordanfails.unify.visibility.VanishVisibilityAdapter
+import net.kyori.adventure.audience.Audience
+import net.kyori.adventure.platform.bukkit.BukkitAudiences
 import org.bukkit.plugin.java.JavaPlugin
 
 class UnifyCore : JavaPlugin() {
@@ -31,9 +35,10 @@ class UnifyCore : JavaPlugin() {
     }
 
     var nms: NMSHandler? = null
-
+    var audience: BukkitAudiences? = null
     override fun onEnable() {
         instance = this
+        audience = BukkitAudiences.create(this);
         saveDefaultConfig()
         nms = NMSHandlerFactory.getHandler()
         commandManager = PaperCommandManager(this)
