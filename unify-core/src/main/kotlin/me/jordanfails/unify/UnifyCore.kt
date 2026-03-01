@@ -69,7 +69,6 @@ class UnifyCore : JavaPlugin() {
         Tasks.runTimerAsync(this, 2L, {
             MenuAutoUpdater.run()
         })
-
         listOf(
             SelectItemListeners,
             ButtonListeners
