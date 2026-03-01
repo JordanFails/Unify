@@ -42,8 +42,6 @@ object StringUtil {
         return sb.toString()
     }
 
-    // ---------- STRING UTILS ----------
-
     @JvmStatic
     fun repeat(string: String, amount: Int): String =
         buildString {
