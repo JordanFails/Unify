@@ -4,3 +4,4 @@ main: me.jordanfails.unify.UnifyCore
 api-version: '1.18'
 author: "JordanFails"
 website: "https://github.com/JordanFails"
+softdepend: [WorldGuard]
