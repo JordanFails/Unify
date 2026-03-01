@@ -83,7 +83,7 @@ object StringUtil {
 
     @JvmStatic
     fun getCenterSpaceCount(textInput: String): Int {
-        var text = CC.translate(textInput)
+        val text = CC.translate(textInput)
 
         var messagePxSize = 0
         var previousCode = false
