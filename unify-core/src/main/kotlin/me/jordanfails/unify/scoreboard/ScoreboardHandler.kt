@@ -19,7 +19,7 @@ object ScoreboardHandler {
     var updateInterval: Int = 20
 
     fun initialLoad() {
-        enabled = UnifyCore.instance.config.getBoolean("scoreboards.enabled", true)
+        enabled = UnifyCore.instance.config.getBoolean("scoreboard.enabled", true)
         if (!enabled) {
             UnifyCore.instance.logger.info("Auto-updating scoreboards are disabled by config")
             return

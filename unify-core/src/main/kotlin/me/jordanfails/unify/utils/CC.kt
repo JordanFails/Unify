@@ -431,4 +431,30 @@ object CC {
             translate(String.format("#%02X%02X%02X%s", r, g, b, c))
         }
     }
+
+
+    /**
+     * Format placeholders in string. Example:
+     *
+     * format("Hello, {0}!", "Steve")
+     */
+    @JvmStatic
+    fun format(string: String, vararg arguments: Any?): String {
+        var formatted = string
+        if (arguments.isNotEmpty()) {
+            for (i in arguments.indices) {
+                val argument: Any? = arguments[i]
+                formatted = formatted.replace("{${i}}", argument?.toString() ?: "")
+            }
+        }
+        return formatted
+    }
+
+    /**
+     * Format + translate combined utility for quick use.
+     */
+    @JvmStatic
+    fun formatTranslate(input: String, vararg arguments: Any?): String {
+        return translate(format(input, *arguments))
+    }
 }
