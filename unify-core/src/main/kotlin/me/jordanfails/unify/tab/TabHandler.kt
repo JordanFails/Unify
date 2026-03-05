@@ -4,6 +4,7 @@ import com.google.common.primitives.Ints
 import me.jordanfails.unify.UnifyCore
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
+import org.bukkit.scheduler.BukkitTask
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
@@ -13,25 +14,37 @@ object TabHandler {
     private var providers = ArrayList<TabProvider>()
 
     private var enabled: Boolean = false
+    private var refreshTask: BukkitTask? = null
     var updateInterval: Int = 40
 
     fun initialLoad() {
+        reloadAll()
+    }
+
+    fun reloadAll() {
         val config = UnifyCore.instance.config
         enabled = config.getBoolean("tab.enabled", true)
+        updateInterval = config.getInt("tab.update-interval-ticks", updateInterval).coerceAtLeast(1)
+
+        refreshTask?.cancel()
+        refreshTask = null
+        providers.clear()
+
         if (!enabled) {
             UnifyCore.instance.logger.info("Custom tab header/footer is disabled by config")
+            playerTabs.clear()
             return
         }
 
-        updateInterval = config.getInt("tab.update-interval-ticks", updateInterval).coerceAtLeast(1)
-
         registerProvider(TabProvider.DefaultTabProvider())
 
-        Bukkit.getScheduler().runTaskTimerAsynchronously(UnifyCore.instance, Runnable {
+        refreshTask = Bukkit.getScheduler().runTaskTimerAsynchronously(UnifyCore.instance, Runnable {
             for (player in Bukkit.getOnlinePlayers()) {
                 reloadPlayer(player)
             }
         }, 20L, updateInterval.toLong())
+
+        Bukkit.getOnlinePlayers().forEach { reloadPlayer(it) }
     }
 
     fun registerProvider(newProvider: TabProvider) {
@@ -90,5 +103,13 @@ object TabHandler {
             .replace("{online}", Bukkit.getOnlinePlayers().size.toString())
             .replace("{max_players}", Bukkit.getMaxPlayers().toString())
             .replace("{ping}", try { UnifyCore.instance.nms?.getPing(player)?.toString() ?: "?" } catch (_: Exception) { "?" })
+    }
+
+    fun isEnabled(): Boolean {
+        return enabled
+    }
+
+    fun providerCount(): Int {
+        return providers.size
     }
 }

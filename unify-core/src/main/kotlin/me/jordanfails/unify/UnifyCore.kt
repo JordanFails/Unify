@@ -15,11 +15,14 @@ import me.jordanfails.unify.tab.TabHandler
 import me.jordanfails.unify.tab.TabListener
 import co.aikar.commands.PaperCommandManager
 import me.jordanfails.unify.acf.ACFCommandController
+import me.jordanfails.unify.commands.PingCommand
+import me.jordanfails.unify.commands.UnifyAdminCommand
 import me.jordanfails.unify.hologram.HologramManager
 import me.jordanfails.unify.hologram.command.HologramCommand
 import me.jordanfails.unify.npc.NPCManager
 import me.jordanfails.unify.npc.command.NPCCommand
 import me.jordanfails.unify.utils.command.CommonCommandContext
+import me.jordanfails.unify.visibility.command.VanishCommand
 import me.jordanfails.unify.visibility.VisibilityHandler
 import me.jordanfails.unify.visibility.VisibilityListeners
 import me.jordanfails.unify.visibility.VanishVisibilityAdapter
@@ -81,8 +84,13 @@ class UnifyCore : JavaPlugin() {
     }
 
     private fun setupCommands() {
-        commandManager.registerCommand(HologramCommand())
-        commandManager.registerCommand(NPCCommand())
+        listOf(
+            HologramCommand(),
+            NPCCommand(),
+            PingCommand(),
+            VanishCommand(),
+            UnifyAdminCommand()
+        ).forEach { commandManager.registerCommand(it) }
     }
 
     private fun setupHolograms() {

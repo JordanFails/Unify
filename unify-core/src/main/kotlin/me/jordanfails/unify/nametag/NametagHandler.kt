@@ -7,6 +7,7 @@ import me.jordanfails.unify.nametag.thread.NametagThread
 import me.jordanfails.unify.nametag.update.NametagUpdate
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
+import org.bukkit.scheduler.BukkitTask
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
@@ -23,31 +24,54 @@ object NametagHandler {
     private var async: Boolean = true
     
     private var enabled: Boolean = false
+    private var threadStarted: Boolean = false
+    private var refreshTask: BukkitTask? = null
 
     var updateInterval: Int = 2
 
     fun initialLoad() {
+        reloadAll()
+    }
+
+    fun reloadAll() {
         enabled = UnifyCore.instance.config.getBoolean("nametags.enabled", true)
+        updateInterval = UnifyCore.instance.config
+            .getInt("nametags.update-interval-ticks", updateInterval)
+            .coerceAtLeast(1)
         if (!enabled) {
             UnifyCore.instance.logger.info("Auto-updating nametags are disabled by config")
+            teamMap.clear()
+            refreshTask?.cancel()
+            refreshTask = null
             return
         }
 
         isNametagRestrictionEnabled = UnifyCore.instance.config.getBoolean("nametags.packet-restriction", false)
         nametagRestrictBypass = UnifyCore.instance.config.getString("nametags.packet-restriction-bypass-prefix") ?: ""
 
-        NametagThread().start()
+        if (!threadStarted) {
+            NametagThread().start()
+            threadStarted = true
+        }
+        refreshTask?.cancel()
+        refreshTask = null
+        providers.clear()
+        teamMap.clear()
         
         // Periodic task to refresh all nametags (catches OP changes, rank changes, etc.)
-        Bukkit.getScheduler().runTaskTimerAsynchronously(UnifyCore.instance, Runnable {
+        refreshTask = Bukkit.getScheduler().runTaskTimerAsynchronously(UnifyCore.instance, Runnable {
             for (player in Bukkit.getOnlinePlayers()) {
                 reloadPlayer(player)
             }
-        }, 40L, 40L) // Every 2 seconds (40 ticks)
+        }, 40L, 40L)
 
         // Register providers (higher weight = higher priority)
         registerProvider(OpNametagProvider())
         registerProvider(NametagProvider.DefaultNametagProvider())
+        Bukkit.getOnlinePlayers().forEach { player ->
+            reloadPlayer(player)
+            reloadOthersFor(player)
+        }
     }
 
     fun registerProvider(newProvider: NametagProvider) {
@@ -171,5 +195,13 @@ object NametagHandler {
         }
 
         return newTeam
+    }
+
+    fun isEnabled(): Boolean {
+        return enabled
+    }
+
+    fun providerCount(): Int {
+        return providers.size
     }
 }

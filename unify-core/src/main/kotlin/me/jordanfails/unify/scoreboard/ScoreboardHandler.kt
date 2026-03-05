@@ -5,6 +5,7 @@ import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.scoreboard.thread.ScoreboardThread
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
+import org.bukkit.scheduler.BukkitTask
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
@@ -15,28 +16,46 @@ object ScoreboardHandler {
     
     private var enabled: Boolean = false
     private var async: Boolean = true
+    private var threadStarted: Boolean = false
+    private var refreshTask: BukkitTask? = null
 
     var updateInterval: Int = 20
 
     fun initialLoad() {
-        enabled = UnifyCore.instance.config.getBoolean("scoreboard.enabled", true)
+        reloadAll()
+    }
+
+    fun reloadAll() {
+        val config = UnifyCore.instance.config
+        enabled = config.getBoolean("scoreboard.enabled", true)
+        updateInterval = config
+            .getInt("scoreboard.update-interval-ticks",
+                config.getInt("scoreboards.update-interval-ticks", updateInterval))
+            .coerceAtLeast(1)
+
+        refreshTask?.cancel()
+        refreshTask = null
+        providers.clear()
+
         if (!enabled) {
             UnifyCore.instance.logger.info("Auto-updating scoreboards are disabled by config")
+            playerBoards.clear()
             return
         }
 
-        updateInterval = UnifyCore.instance.config.getInt("scoreboards.update-interval-ticks", updateInterval)
-            .coerceAtLeast(1)
+        if (!threadStarted) {
+            ScoreboardThread().start()
+            threadStarted = true
+        }
 
-        ScoreboardThread().start()
-        
-        Bukkit.getScheduler().runTaskTimerAsynchronously(UnifyCore.instance, Runnable {
+        refreshTask = Bukkit.getScheduler().runTaskTimerAsynchronously(UnifyCore.instance, Runnable {
             for (player in Bukkit.getOnlinePlayers()) {
                 reloadPlayer(player)
             }
         }, 20L, updateInterval.toLong())
 
         registerProvider(ScoreboardProvider.DefaultScoreboardProvider())
+        Bukkit.getOnlinePlayers().forEach { reloadPlayer(it) }
     }
 
     fun registerProvider(newProvider: ScoreboardProvider) {
@@ -90,5 +109,13 @@ object ScoreboardHandler {
 
     fun removePlayer(player: Player) {
         playerBoards.remove(player.uniqueId)
+    }
+
+    fun isEnabled(): Boolean {
+        return enabled
+    }
+
+    fun providerCount(): Int {
+        return providers.size
     }
 }
