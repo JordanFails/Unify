@@ -39,7 +39,7 @@ dependencies {
     implementation(kotlin("reflect"))
     implementation("com.github.cryptomorin:XSeries:10.0.0")
     implementation("co.aikar:acf-paper:0.5.1-SNAPSHOT")
-    implementation("me.jordanfails:honey:1.0.0")
+    implementation("services.plasma:honey:1.1.0")
     compileOnly("com.sk89q.worldguard:worldguard-bukkit:7.0.5")
     compileOnly("com.sk89q.worldedit:worldedit-bukkit:7.2.0")
 //    compileOnly("com.mojang:authlib:3.18.38")
