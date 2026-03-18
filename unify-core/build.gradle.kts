@@ -19,8 +19,9 @@ repositories {
     maven("https://maven.enginehub.org/repo/") {
         name = "enginehub"
     }
-    maven("https://maven.plasma.services/") {
-        name = "plasma"
+    maven {
+        name = "plasmaServicesReleases"
+        url = uri("https://maven.plasma.services/releases")
     }
 }
 
