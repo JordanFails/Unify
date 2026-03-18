@@ -24,7 +24,7 @@ repositories {
         name = "GitHubPackages"
         credentials {
             username = System.getenv("GITHUB_ACTOR") ?: ""
-            password = System.getenv("GITHUB_TOKEN") ?: ""
+            password = System.getenv("HONEY_TOKEN") ?: ""
         }
     }
 }

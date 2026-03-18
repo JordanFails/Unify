@@ -7,6 +7,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      HONEY_TOKEN: ${{ secrets.HONEY_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
