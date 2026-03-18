@@ -12,10 +12,10 @@ class HologramContextResolver : CommonCommandContext<UnifyHologram>(
     UnifyHologram::class.java
 ){
 
-    override fun getContext(arg: BukkitCommandExecutionContext): UnifyHologram {
-        val firstArg = arg.popFirstArg()
+    override fun getContext(arg: BukkitCommandExecutionContext?): UnifyHologram? {
+        val firstArg = arg?.popFirstArg() ?: return null
 
-        return HologramManager.get(firstArg!!) ?: throw InvalidCommandArgument("No such hologram with the name \"${firstArg}\"!")
+        return HologramManager.get(firstArg) ?: throw InvalidCommandArgument("No such hologram with the name \"${firstArg}\"!")
     }
 
     override fun getCompletions(context: BukkitCommandCompletionContext): Collection<String> {
