@@ -36,6 +36,7 @@ jobs:
           server-id: github
           server-username: GITHUB_ACTOR
           server-password: GITHUB_TOKEN
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}   # <-- your PAT
 
       # Cache the Gradle wrapper binary separately — changes very rarely
       - name: Cache Gradle wrapper
