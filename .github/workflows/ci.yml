@@ -22,8 +22,6 @@ jobs:
     permissions:
       contents: read
       packages: read
-    env:
-      HONEY_TOKEN: ${{ secrets.HONEY_TOKEN }}
 
     steps:
       - name: Checkout
@@ -67,7 +65,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
-          HONEY_TOKEN: ${{ secrets.HONEY_TOKEN }}
 
       - name: Upload plugin jar
         if: success()

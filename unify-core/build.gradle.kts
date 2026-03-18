@@ -19,13 +19,8 @@ repositories {
     maven("https://maven.enginehub.org/repo/") {
         name = "enginehub"
     }
-    maven {
-        url = uri("https://maven.pkg.github.com/JordanFails/honey")
-        name = "GitHubPackages"
-        credentials {
-            username = System.getenv("GITHUB_ACTOR") ?: ""
-            password = System.getenv("HONEY_TOKEN") ?: ""
-        }
+    maven("https://maven.plasma.services/") {
+        name = "plasma"
     }
 }
 
