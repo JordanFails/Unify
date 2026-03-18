@@ -51,7 +51,6 @@ jobs:
         with:
           path: |
             ~/.gradle/caches
-            ~/.gradle/configuration-cache
             ~/.paper/cache
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle.kts', '**/*.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'gradle.properties') }}
           restore-keys: |
@@ -61,7 +60,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build & Test
-        run: ./gradlew build --no-daemon --build-cache --configuration-cache
+        run: ./gradlew build --no-daemon --build-cache
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
