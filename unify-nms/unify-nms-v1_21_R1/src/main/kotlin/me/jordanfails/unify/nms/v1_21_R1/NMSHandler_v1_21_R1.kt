@@ -1,5 +1,6 @@
 package me.jordanfails.unify.nms.v1_21_R1
 
+import de.tr7zw.nbtapi.NBT
 import io.papermc.paper.adventure.PaperAdventure
 import com.mojang.authlib.GameProfile
 import com.mojang.authlib.properties.Property
@@ -35,6 +36,7 @@ import net.minecraft.server.network.ServerGamePacketListenerImpl
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.decoration.ArmorStand
 import net.minecraft.world.entity.item.ItemEntity
+import net.minecraft.world.item.component.ResolvableProfile
 import net.minecraft.world.scores.DisplaySlot
 import net.minecraft.world.scores.Objective
 import net.minecraft.world.scores.PlayerTeam
@@ -51,10 +53,12 @@ import org.bukkit.craftbukkit.CraftServer
 import org.bukkit.craftbukkit.CraftWorld
 import org.bukkit.craftbukkit.entity.CraftPlayer
 import org.bukkit.craftbukkit.inventory.CraftItemStack
+import org.bukkit.craftbukkit.profile.CraftPlayerProfile
 import org.bukkit.entity.Player
 import org.bukkit.inventory.Inventory
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.meta.Damageable
+import org.bukkit.inventory.meta.SkullMeta
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
@@ -112,6 +116,37 @@ class NMSHandler_v1_21_R1 : NMSHandler {
         val meta = item.itemMeta ?: return
         meta.isUnbreakable = unbreakable
         item.itemMeta = meta
+    }
+
+    override fun applySkullTexture(item: ItemStack, base64Texture: String): Boolean {
+        return try {
+            NBT.modifyComponents(item) { nbt ->
+                val profile = nbt.getOrCreateCompound("minecraft:profile")
+                profile.setUUID("id", UUID.randomUUID())
+                profile.removeKey("name")
+                val properties = profile.getCompoundList("properties")
+                properties.clear()
+                val textures = properties.addCompound()
+                textures.setString("name", "textures")
+                textures.setString("value", base64Texture)
+            }
+            true
+        } catch (e: Throwable) {
+            UnifyCore.instance.logger.warning("applySkullTexture failed: ${e.javaClass.simpleName}: ${e.message}")
+            false
+        }
+    }
+
+    private fun findFieldInHierarchy(clazz: Class<*>, name: String): java.lang.reflect.Field? {
+        var current: Class<*>? = clazz
+        while (current != null && current != Any::class.java) {
+            try {
+                return current.getDeclaredField(name)
+            } catch (_: NoSuchFieldException) {
+                current = current.superclass
+            }
+        }
+        return null
     }
 
     override fun openMenuInventory(player: Player, inventory: Inventory, title: String) {
@@ -415,53 +450,69 @@ class NMSHandler_v1_21_R1 : NMSHandler {
         val signature: String?,
     )
 
+    private fun getProfileProperties(profile: GameProfile): Any? {
+        return runCatching {
+            profile.javaClass.getMethod("getProperties").invoke(profile)
+        }.getOrNull()
+            ?: runCatching {
+                profile.javaClass.getMethod("properties").invoke(profile)
+            }.getOrNull()
+    }
+
     private fun setProfileTexture(profile: GameProfile, value: String, signature: String?) {
-        val propertyMap = resolveProfilePropertyMap(profile) ?: return
-        removeTextureProperties(propertyMap)
-        val property = if (signature.isNullOrBlank()) {
-            Property("textures", value)
-        } else {
-            Property("textures", value, signature)
-        }
+        val properties = getProfileProperties(profile) ?: return
+        removeTextureProperties(properties)
+        val property = createTextureProperty(value, signature) ?: return
         runCatching {
-            propertyMap.javaClass.getMethod("put", Any::class.java, Any::class.java).invoke(propertyMap, "textures", property)
+            properties.javaClass.getMethod("put", Any::class.java, Any::class.java)
+                .invoke(properties, "textures", property)
         }
     }
 
     private fun getProfileTextures(profile: GameProfile): List<TextureProperty> {
-        val propertyMap = resolveProfilePropertyMap(profile) ?: return emptyList()
+        val properties = getProfileProperties(profile) ?: return emptyList()
         val rawTextures = runCatching {
-            propertyMap.javaClass.getMethod("get", Any::class.java).invoke(propertyMap, "textures")
+            properties.javaClass.getMethod("get", Any::class.java).invoke(properties, "textures")
         }.getOrNull() as? Iterable<*> ?: return emptyList()
 
-        return rawTextures.mapNotNull { raw ->
-            val property = raw ?: return@mapNotNull null
-            val value = readStringMember(property, "value", "getValue") ?: return@mapNotNull null
-            val signature = readStringMember(property, "signature", "getSignature")
+        return rawTextures.mapNotNull { prop ->
+            val raw = prop ?: return@mapNotNull null
+            val value = readStringMember(raw, "value", "value") ?: readStringMember(raw, "value", "getValue")
+                ?: return@mapNotNull null
+            val signature = readStringMember(raw, "signature", "signature")
+                ?: readStringMember(raw, "signature", "getSignature")
             TextureProperty(value, signature)
         }
     }
 
-    private fun resolveProfilePropertyMap(profile: GameProfile): Any? {
-        return runCatching {
-            profile.javaClass.getMethod("getProperties").invoke(profile)
-        }.getOrNull() ?: runCatching {
-            profile.javaClass.getField("properties").get(profile)
-        }.getOrNull()
-    }
-
-    private fun removeTextureProperties(propertyMap: Any) {
+    private fun removeTextureProperties(properties: Any) {
         val removed = runCatching {
-            propertyMap.javaClass.getMethod("removeAll", Any::class.java).invoke(propertyMap, "textures")
+            properties.javaClass.getMethod("removeAll", Any::class.java).invoke(properties, "textures")
             true
         }.getOrElse { false }
 
         if (!removed) {
             runCatching {
-                val current = propertyMap.javaClass.getMethod("get", Any::class.java).invoke(propertyMap, "textures")
+                val current = properties.javaClass.getMethod("get", Any::class.java).invoke(properties, "textures")
                 (current as? MutableCollection<*>)?.clear()
             }
         }
+    }
+
+    private fun createTextureProperty(value: String, signature: String?): Any? {
+        return runCatching {
+            val propertyClass = Class.forName("com.mojang.authlib.properties.Property")
+            val constructor = if (signature.isNullOrBlank()) {
+                propertyClass.getConstructor(String::class.java, String::class.java)
+            } else {
+                propertyClass.getConstructor(String::class.java, String::class.java, String::class.java)
+            }
+            if (signature.isNullOrBlank()) {
+                constructor.newInstance("textures", value)
+            } else {
+                constructor.newInstance("textures", value, signature)
+            }
+        }.getOrNull()
     }
 
     private fun readStringMember(target: Any, fieldName: String, getterName: String): String? {

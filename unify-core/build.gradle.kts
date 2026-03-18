@@ -39,6 +39,7 @@ dependencies {
     implementation("me.jordanfails:honey:1.0.0")
     compileOnly("com.sk89q.worldguard:worldguard-bukkit:7.0.5")
     compileOnly("com.sk89q.worldedit:worldedit-bukkit:7.2.0")
+//    compileOnly("com.mojang:authlib:3.18.38")
 
 }
 

@@ -20,6 +20,7 @@ import org.bukkit.craftbukkit.v1_8_R3.inventory.CraftItemStack
 import org.bukkit.entity.Player
 import org.bukkit.inventory.Inventory
 import org.bukkit.inventory.ItemStack
+import org.bukkit.inventory.meta.SkullMeta
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 import java.util.UUID
@@ -79,6 +80,22 @@ class NMSHandler_v1_8_R3 : NMSHandler {
             method.invoke(spigotMeta, unbreakable)
             item.itemMeta = meta
         } catch (_: Throwable) { }
+    }
+
+    override fun applySkullTexture(item: ItemStack, base64Texture: String): Boolean {
+        val meta = item.itemMeta as? SkullMeta ?: return false
+        return try {
+            val profile = GameProfile(UUID.randomUUID(), "custom")
+            profile.properties.removeAll("textures")
+            profile.properties.put("textures", Property("textures", base64Texture))
+            val field = meta.javaClass.getDeclaredField("profile")
+            field.isAccessible = true
+            field.set(meta, profile)
+            item.itemMeta = meta
+            true
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     override fun openMenuInventory(player: Player, inventory: Inventory, title: String) {

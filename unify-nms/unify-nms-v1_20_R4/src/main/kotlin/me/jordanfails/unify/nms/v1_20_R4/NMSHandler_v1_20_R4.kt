@@ -28,6 +28,7 @@ import net.minecraft.server.network.ServerGamePacketListenerImpl
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.decoration.ArmorStand
 import net.minecraft.world.entity.item.ItemEntity
+import net.minecraft.world.item.component.ResolvableProfile
 import net.minecraft.world.scores.PlayerTeam
 import net.minecraft.world.scores.Scoreboard
 import net.minecraft.world.scores.Team
@@ -45,6 +46,7 @@ import org.bukkit.entity.Player
 import org.bukkit.inventory.Inventory
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.meta.Damageable
+import org.bukkit.inventory.meta.SkullMeta
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 import java.util.UUID
@@ -98,6 +100,43 @@ class NMSHandler_v1_20_R4 : NMSHandler {
         val meta = item.itemMeta ?: return
         meta.isUnbreakable = unbreakable
         item.itemMeta = meta
+    }
+
+    override fun applySkullTexture(item: ItemStack, base64Texture: String): Boolean {
+        val meta = item.itemMeta as? SkullMeta ?: return false
+        return try {
+            val profile = GameProfile(UUID.randomUUID(), "custom")
+            profile.properties.removeAll("textures")
+            profile.properties.put("textures", Property("textures", base64Texture))
+
+            val field = findFieldInHierarchy(meta.javaClass, "profile") ?: return false
+            field.isAccessible = true
+
+            val profileValue: Any = try {
+                val resolvable = ResolvableProfile(profile)
+                if (field.type.isAssignableFrom(resolvable.javaClass)) resolvable else profile
+            } catch (_: Throwable) {
+                profile
+            }
+
+            field.set(meta, profileValue)
+            item.itemMeta = meta
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun findFieldInHierarchy(clazz: Class<*>, name: String): java.lang.reflect.Field? {
+        var current: Class<*>? = clazz
+        while (current != null && current != Any::class.java) {
+            try {
+                return current.getDeclaredField(name)
+            } catch (_: NoSuchFieldException) {
+                current = current.superclass
+            }
+        }
+        return null
     }
 
     override fun openMenuInventory(player: Player, inventory: Inventory, title: String) {

@@ -29,6 +29,7 @@ interface NMSHandler {
     fun setItemDurability(item: ItemStack, durability: Int)
     fun setItemData(item: ItemStack, data: Short)
     fun setItemUnbreakable(item: ItemStack, unbreakable: Boolean)
+    fun applySkullTexture(item: ItemStack, base64Texture: String): Boolean
 
     // --- New Menu Helpers ---
     fun openMenuInventory(player: Player, inventory: Inventory, title: String)
