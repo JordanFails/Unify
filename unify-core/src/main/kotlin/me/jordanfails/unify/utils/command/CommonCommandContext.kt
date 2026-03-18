@@ -2,17 +2,13 @@ package me.jordanfails.unify.utils.command
 
 import co.aikar.commands.BukkitCommandCompletionContext
 import co.aikar.commands.BukkitCommandExecutionContext
+import co.aikar.commands.contexts.ContextResolver
 import co.aikar.commands.InvalidCommandArgument
 
-/**
- * Base class for command contexts in ACF (Aikar's Command Framework).
- * Provides a consistent generic wrapper for resolving custom objects
- * from command arguments and providing tab completions.
- */
 abstract class CommonCommandContext<T>(
     val id: String,
     val clazz: Class<T>
-) {
+) : ContextResolver<T, BukkitCommandExecutionContext> {
 
     /**
      * Resolves the argument into the expected type when the command is executed.
@@ -22,7 +18,7 @@ abstract class CommonCommandContext<T>(
      * @throws InvalidCommandArgument when the argument cannot be resolved into T
      */
     @Throws(InvalidCommandArgument::class)
-    abstract fun getContext(arg: BukkitCommandExecutionContext): T
+    abstract override fun getContext(arg: BukkitCommandExecutionContext?): T?
 
     /**
      * Provides tab completions for this context type.
