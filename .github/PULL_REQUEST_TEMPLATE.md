@@ -13,7 +13,9 @@
 ## AI Used?
 
 - [ ] No
-- [ ] Yes: <!-- what -->
+- [ ] Yes
+
+If yes, paste prompts used: <!-- --> 
 
 ## Testing
 
