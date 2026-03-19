@@ -150,8 +150,9 @@ object StringUtil {
     @JvmStatic
     fun formatLore(lore: String): List<String> {
         val messages = mutableListOf<String>()
+        val translated = CC.translate(lore)
         var nextString = StringBuilder(ChatColor.WHITE.toString())
-        for (word in lore.split(" ")) {
+        for (word in translated.split(" ")) {
             if (word.length > 40) continue
             if (nextString.length + word.length > 40) {
                 messages.add(nextString.toString())
