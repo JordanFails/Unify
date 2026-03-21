@@ -9,6 +9,8 @@ import org.bukkit.event.inventory.ClickType
 import org.bukkit.inventory.InventoryView
 import org.bukkit.inventory.ItemStack
 
+//This menu isn't completely finished (use at your own risk)
+
 class CosmicConfirmMenu(
     val title: String = "Are you sure?",
     var confirmItem: ItemStack? = null,
