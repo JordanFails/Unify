@@ -4,6 +4,8 @@ import org.bukkit.ChatColor
 import java.text.DecimalFormat
 import java.text.NumberFormat
 import java.util.*
+import java.util.regex.Matcher
+import java.util.regex.Pattern
 import kotlin.math.max
 import kotlin.math.min
 
@@ -147,23 +149,47 @@ object StringUtil {
     @JvmStatic
     fun colorFormat(string: String, vararg arguments: Any?): String =
         CC.translate(format(string, *arguments))
-    @JvmStatic
-    fun formatLore(lore: String): List<String> {
-        val messages = mutableListOf<String>()
-        val translated = CC.translate(lore)
-        var nextString = StringBuilder(ChatColor.WHITE.toString())
-        for (word in translated.split(" ")) {
-            if (word.length > 40) continue
-            if (nextString.length + word.length > 40) {
-                messages.add(nextString.toString())
-                nextString = StringBuilder("${ChatColor.WHITE}$word ")
-            } else {
-                nextString.append("${ChatColor.WHITE}$word ")
-            }
-        }
-        messages.add(nextString.toString())
-        return messages
-    }
+//    @JvmStatic
+//    fun formatLore(lore: String): List<String> {
+//        val messages = mutableListOf<String>()
+//        val translated = CC.translate(lore)
+//        var currentLine = StringBuilder()
+//        var lastColorCode = ""
+//
+//        val pattern = Pattern.compile("(§[x][§a-fA-F0-9]{11}|§[a-fA-Fk-oK-OrR]|§r|.)")
+//        val matcher = pattern.matcher(translated)
+//        var visibleCount = 0
+//
+//        while (matcher.find()) {
+//            val token = matcher.group()
+//            if (token.startsWith("§x")) {
+//                lastColorCode = token
+//                matcher.appendReplacement(currentLine, Matcher.quoteReplacement(token))
+//            } else if (token == "§r") {
+//                lastColorCode = ""
+//                matcher.appendReplacement(currentLine, Matcher.quoteReplacement(token))
+//            } else if (token == " ") {
+//                matcher.appendReplacement(currentLine, " ")
+//                visibleCount++
+//            } else if (token.startsWith("§")) {
+//                lastColorCode = token
+//                matcher.appendReplacement(currentLine, Matcher.quoteReplacement(token))
+//            } else {
+//                if (visibleCount >= 40 && currentLine.isNotEmpty()) {
+//                    messages.add(currentLine.toString())
+//                    currentLine = StringBuilder(lastColorCode)
+//                    visibleCount = 0
+//                }
+//                matcher.appendReplacement(currentLine, Matcher.quoteReplacement(token))
+//                visibleCount++
+//            }
+//        }
+//        if (currentLine.isNotEmpty()) {
+//            messages.add(currentLine.toString())
+//        }
+//
+//        return messages
+//    }
     @JvmStatic
     fun formatMoney(number: Double): String =
         CURRENCY_FORMAT.format(number)

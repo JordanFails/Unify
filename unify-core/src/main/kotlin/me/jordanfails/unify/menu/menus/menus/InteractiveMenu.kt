@@ -99,6 +99,13 @@ abstract class InteractiveMenu : Menu {
     open fun shouldReturnItemsOnClose(): Boolean = returnItemsOnClose
 
     /**
+     * Called before buttons are built for the current viewer.
+     * Override this when the visible slot contents depend on runtime state
+     * such as pages, filters, or external persistence.
+     */
+    open fun prepareMenu(player: Player) {}
+
+    /**
      * Gets the behavior for a specific slot.
      */
     fun getSlotBehavior(slot: Int): SlotBehavior {
@@ -176,6 +183,7 @@ abstract class InteractiveMenu : Menu {
     }
 
     override fun getButtons(player: Player): Map<Int, Button> {
+        prepareMenu(player)
         computeSlotBehaviors()
         val buttons = mutableMapOf<Int, Button>()
 
