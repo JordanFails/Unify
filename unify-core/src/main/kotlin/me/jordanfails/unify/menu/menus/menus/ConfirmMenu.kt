@@ -13,13 +13,13 @@ import org.bukkit.inventory.InventoryView
 import org.bukkit.inventory.ItemStack
 
 class ConfirmMenu(
-    private val titleText: String = "Are you sure?",
-    private val extraInfo: MutableList<String> = mutableListOf(),
-    private val confirmButtonOnLeft: Boolean = true,
-    private val callback: (Boolean) -> Unit
+    val titleText: String = "Are you sure?",
+    val extraInfo: MutableList<String> = mutableListOf(),
+    val confirmButtonOnLeft: Boolean = true,
+    val callback: (Boolean) -> Unit
 ) : Menu() {
 
-    private var called = false
+    var called = false
 
     override fun getTitle(player: Player): String {
         return CC.translate(titleText)
