@@ -1,7 +1,7 @@
 package me.jordanfails.unify.menu.scrolling
 
 import me.jordanfails.unify.menu.Button
-import me.jordanfails.unify.menu.Menu
+import me.jordanfails.unify.menu.pagination.PaginatedMenu
 import me.jordanfails.unify.utils.ItemBuilder
 import org.bukkit.Material
 import org.bukkit.entity.Player
@@ -12,19 +12,31 @@ import kotlin.math.min
 
 abstract class ScrollableMenu(
     title: String = "&8Scrollable Menu"
-) : Menu(title) {
+) : PaginatedMenu() {
+    private val menuTitle = title
 
     var scrollOffset: Int = 0
 
     override fun getMinSize(): Int = 54
 
-    override fun getButtons(player: Player): Map<Int, Button> {
+    override fun getTitle(player: Player): String = menuTitle
+
+    override fun getPrePaginatedTitle(player: Player): String = menuTitle
+
+    override fun getPages(player: Player): Int {
+        val step = getScrollStep(player).coerceAtLeast(1)
+        val maxOffset = getMaxOffset(player)
+        return if (maxOffset == 0) 1 else kotlin.math.ceil(maxOffset.toDouble() / step).toInt() + 1
+    }
+
+    override fun getButtons(player: Player): MutableMap<Int, Button> {
         val buttons = linkedMapOf<Int, Button>()
         val visibleSlots = getScrollableSlots(player)
         val allButtons = getScrollableButtons(player)
-        val maxOffset = getMaxOffset(player)
+        val totalPages = getPages(player).coerceAtLeast(1)
 
-        scrollOffset = scrollOffset.coerceIn(0, maxOffset)
+        page = page.coerceIn(1, totalPages)
+        scrollOffset = resolveScrollOffset(player)
 
         val endIndex = min(allButtons.size, scrollOffset + visibleSlots.size)
         val visibleButtons = allButtons.subList(scrollOffset, endIndex)
@@ -44,13 +56,15 @@ abstract class ScrollableMenu(
     }
 
     fun scroll(player: Player, direction: Int) {
-        val nextOffset = (scrollOffset + (direction * getScrollStep(player))).coerceIn(0, getMaxOffset(player))
-        if (nextOffset == scrollOffset) {
+        val totalPages = getPages(player).coerceAtLeast(1)
+        val nextPage = (page + direction).coerceIn(1, totalPages)
+        if (nextPage == page) {
             Button.playFail(player)
             return
         }
 
-        scrollOffset = nextOffset
+        page = nextPage
+        scrollOffset = resolveScrollOffset(player)
         Button.playClick(player)
         openMenu(player)
     }
@@ -65,9 +79,20 @@ abstract class ScrollableMenu(
 
     abstract fun getScrollableButtons(player: Player): List<Button>
 
+    override fun getAllPagesButtons(player: Player): Map<Int, Button> {
+        return getScrollableButtons(player).mapIndexed { index, button -> index to button }.toMap()
+    }
+
+    override fun getAllPagesButtonSlots(): List<Int> = emptyList()
+
     private fun getMaxOffset(player: Player): Int {
         val visibleSlots = getScrollableSlots(player).size.coerceAtLeast(1)
         return (getScrollableButtons(player).size - visibleSlots).coerceAtLeast(0)
+    }
+
+    private fun resolveScrollOffset(player: Player): Int {
+        val step = getScrollStep(player).coerceAtLeast(1)
+        return ((page - 1) * step).coerceIn(0, getMaxOffset(player))
     }
 
     private class ScrollButton(
@@ -75,7 +100,7 @@ abstract class ScrollableMenu(
         private val menu: ScrollableMenu
     ) : Button() {
         override fun getButtonItem(player: Player): ItemStack {
-            val canScroll = if (direction < 0) menu.scrollOffset > 0 else menu.scrollOffset < menu.getMaxOffset(player)
+            val canScroll = if (direction < 0) menu.page > 1 else menu.page < menu.getPages(player)
 
             return ItemBuilder(if (canScroll) Material.ARROW else Material.BARRIER)
                 .name(

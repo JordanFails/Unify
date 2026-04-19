@@ -103,7 +103,7 @@ abstract class Menu {
         }
 
         if (placeholder) {
-            val placeholder = Button.placeholder(Material.GRAY_STAINED_GLASS_PANE, 15.toByte(), " ")
+            val placeholder = Button.placeholder(XMaterial.GRAY_STAINED_GLASS_PANE, 15.toByte(), " ")
 
             for (index in 0 until size(invButtons)) {
                 if (invButtons[index] == null) {

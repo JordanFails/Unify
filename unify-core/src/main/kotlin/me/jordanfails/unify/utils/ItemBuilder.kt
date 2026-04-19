@@ -121,7 +121,7 @@ class ItemBuilder(private val item: ItemStack) {
     fun type(xMaterial: XMaterial) = apply {
         val resolved = XSupport.resolve(xMaterial, 1)
         item.type = resolved.type
-        if (resolved.durability != 0.toShort()) data(resolved.durability)
+        if (resolved.durability != 0.toShort()) data(resolved.data!!.data.toShort())
     }
 
     fun clone(): ItemBuilder = ItemBuilder(item.clone())

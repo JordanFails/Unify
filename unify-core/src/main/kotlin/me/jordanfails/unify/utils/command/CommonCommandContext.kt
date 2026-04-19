@@ -2,8 +2,9 @@ package me.jordanfails.unify.utils.command
 
 import co.aikar.commands.BukkitCommandCompletionContext
 import co.aikar.commands.BukkitCommandExecutionContext
-import co.aikar.commands.contexts.ContextResolver
+import co.aikar.commands.BukkitCommandManager
 import co.aikar.commands.InvalidCommandArgument
+import co.aikar.commands.contexts.ContextResolver
 
 abstract class CommonCommandContext<T>(
     val id: String,
@@ -29,6 +30,16 @@ abstract class CommonCommandContext<T>(
     @Throws(InvalidCommandArgument::class)
     open fun getCompletions(context: BukkitCommandCompletionContext): Collection<String> {
         return emptyList()
+    }
+
+    /**
+     * Registers this context's resolver and tab completions with the given manager.
+     */
+    fun register(manager: BukkitCommandManager) {
+        manager.commandContexts.registerContext(clazz, this)
+        manager.commandCompletions.registerCompletion(id) { ctx ->
+            getCompletions(ctx)
+        }
     }
 
     fun getType(): Class<T> = clazz

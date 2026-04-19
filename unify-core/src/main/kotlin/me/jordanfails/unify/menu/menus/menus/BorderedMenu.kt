@@ -32,7 +32,7 @@ abstract class BorderedMenu(
      * The placeholder (visual filler) button used for the border slots.
      */
     open fun getPlaceholderButton(): Button =
-        Button.placeholder(XMaterial.GRAY_STAINED_GLASS_PANE.parseMaterial()!!, " ")
+        Button.placeholder(Material.GRAY_STAINED_GLASS_PANE, 15.toByte(), " ", )
 
     /**
      * Composes the menu layout with both borders and content.

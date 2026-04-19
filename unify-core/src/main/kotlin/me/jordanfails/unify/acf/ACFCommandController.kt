@@ -2,26 +2,20 @@ package me.jordanfails.unify.acf
 
 import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.acf.context.HologramContextResolver
+import me.jordanfails.unify.acf.context.NPCContextResolver
 import me.jordanfails.unify.hologram.HologramManager
 import me.jordanfails.unify.hologram.UnifyHologram
 import me.jordanfails.unify.npc.NPCManager
 
 object ACFCommandController {
     val acf = UnifyCore.commandManager
-
+    val commandHandler: CommandHandler = CommandHandler(acf)
 
     fun registerAll() {
-
-        acf.commandContexts.registerContext(UnifyHologram::class.java, HologramContextResolver())
-
-        acf.commandCompletions.registerCompletion("holograms") {
-            return@registerCompletion HologramManager.getIds().toList()
-        }
-
-        acf.commandCompletions.registerCompletion("npcs") {
-            return@registerCompletion NPCManager.getIds().toList()
-        }
-
+        commandHandler.registerResolvers(
+            HologramContextResolver(),
+            NPCContextResolver()
+        )
         acf.enableUnstableAPI("help")
     }
 }

@@ -1,11 +1,11 @@
 package me.jordanfails.unify.menu.menus.menus
 
 import com.cryptomorin.xseries.XMaterial
+import com.cryptomorin.xseries.XSound
 import me.jordanfails.unify.menu.Button
 import me.jordanfails.unify.menu.Menu
 import me.jordanfails.unify.utils.CC
 import me.jordanfails.unify.utils.ItemBuilder
-import org.bukkit.Material
 import org.bukkit.Sound
 import org.bukkit.entity.Player
 import org.bukkit.event.inventory.ClickType
@@ -46,7 +46,7 @@ class ConfirmMenu(
 
         buttons[confirmSlot] = object : Button() {
             override fun getButtonItem(player: Player): ItemStack {
-                return ItemBuilder(Material.GREEN_DYE)
+                return ItemBuilder(XMaterial.GREEN_DYE)
                     .name(CC.translate("&a&lConfirm"))
                     .lore(
                         mutableListOf(
@@ -70,7 +70,7 @@ class ConfirmMenu(
 
         buttons[denySlot] = object : Button() {
             override fun getButtonItem(player: Player): ItemStack {
-                return ItemBuilder(Material.RED_DYE)
+                return ItemBuilder(XMaterial.RED_DYE)
                     .name(CC.translate("&c&lCancel"))
                     .lore(
                         listOf(
@@ -85,7 +85,7 @@ class ConfirmMenu(
             override fun clicked(player: Player, slot: Int, clickType: ClickType, view: InventoryView) {
                 if (!called) {
                     called = true
-                    player.playSound(player.location, Sound.BLOCK_NOTE_BLOCK_BASEDRUM, 1f, 0.6f)
+                    player.playSound(player.location, XSound.BLOCK_NOTE_BLOCK_BASEDRUM.parseSound()!!, 1f, 0.6f)
                     player.closeInventory()
                     callback(false)
                 }
@@ -96,7 +96,7 @@ class ConfirmMenu(
         if (extraInfo.isNotEmpty()) {
             buttons[4] = object : Button() {
                 override fun getButtonItem(player: Player): ItemStack {
-                    return ItemBuilder(Material.OAK_SIGN)
+                    return ItemBuilder(XMaterial.OAK_SIGN)
                         .name(CC.translate("&e&lInfo"))
                         .lore(extraInfo.map { CC.translate(it) })
                         .build()

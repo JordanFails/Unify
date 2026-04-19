@@ -14,7 +14,7 @@ import kotlin.collections.iterator
 object MenuAutoUpdater : Runnable, Listener {
 
     private val updateTimestamps: MutableMap<UUID, Long> = ConcurrentHashMap()
-    private val nms: NMSHandler? = NMSHandlerFactory.getHandler()
+//    private val nms: NMSHandler? = NMSHandlerFactory.getHandler()
 
     override fun run() {
         for ((uuid, openMenu) in Menu.currentlyOpenedMenus.entries) {

@@ -1,13 +1,14 @@
 package me.jordanfails.unify.menu.pagination
 
+import com.cryptomorin.xseries.XMaterial
 import me.jordanfails.unify.menu.pagebuttons.ArrowPageButton
 import me.jordanfails.unify.menu.pagebuttons.PaperPageButton
 import me.jordanfails.unify.menu.Button
 import me.jordanfails.unify.menu.menus.PageButtonType
 import me.jordanfails.unify.menu.pagebuttons.CarpetPageButton
+import me.jordanfails.unify.menu.pagebuttons.HeadPageButton
 import me.jordanfails.unify.menu.pagebuttons.MelonPageButton
 import org.bukkit.ChatColor
-import org.bukkit.Material
 import org.bukkit.entity.Player
 import kotlin.math.ceil
 
@@ -27,30 +28,18 @@ abstract class PaginatedBorderedMenu : PaginatedMenu() {
 
     /**
      * The total menu size. Override this if you want a specific size,
-     * otherwise uses getMinSize() or defaults to 54 (6 rows).
+     * otherwise uses getMinSize() or defaults to 27 (3 rows).
      */
     open fun getMenuSize(): Int {
         val minSize = getMinSize()
-        return if (minSize > 0) minSize else 54
+        return if (minSize > 0) minSize else 27
     }
 
     /**
      * Which slots are considered part of the border (top, bottom, sides).
      */
     open fun getBorderSlots(): List<Int> {
-        val total = getMenuSize()
-        val borderSlots = mutableListOf<Int>()
-        val rows = total / 9
-
-        for (slot in 0 until total) {
-            val row = slot / 9
-            val col = slot % 9
-            if (row == 0 || row == rows - 1 || col == 0 || col == 8) {
-                borderSlots += slot
-            }
-        }
-
-        return borderSlots
+        return computeBorderSlots(getMenuSize())
     }
 
     /**
@@ -58,21 +47,14 @@ abstract class PaginatedBorderedMenu : PaginatedMenu() {
      * This automatically excludes any slots used by global buttons and page buttons.
      */
     open fun getInnerSlots(player: Player): List<Int> {
-        val total = getMenuSize()
+        val total = resolveMenuSize(player)
         val innerSlots = mutableListOf<Int>()
-        val rows = total / 9
 
         // Get slots that are reserved (border, page buttons, global buttons)
         val reservedSlots = mutableSetOf<Int>()
 
         // Add border slots
-        for (slot in 0 until total) {
-            val row = slot / 9
-            val col = slot % 9
-            if (row == 0 || row == rows - 1 || col == 0 || col == 8) {
-                reservedSlots.add(slot)
-            }
-        }
+        reservedSlots.addAll(computeBorderSlots(total))
 
         // Add page navigation button slots
         getPageButtonSlots()?.let { (prev, next) ->
@@ -99,18 +81,19 @@ abstract class PaginatedBorderedMenu : PaginatedMenu() {
 
     override fun getButtons(player: Player): MutableMap<Int, Button> {
         val buttons = mutableMapOf<Int, Button>()
+        val borderSlots = computeBorderSlots(resolveMenuSize(player))
 
         // ── ① Border first (pure decoration) - LOWEST PRIORITY
         if (hasBorder()) {
-            val filler = Button.placeholder(Material.BLACK_STAINED_GLASS_PANE, 15.toByte(), " ")
-            for (slot in getBorderSlots()) {
+            val filler = Button.placeholder(XMaterial.BLACK_STAINED_GLASS_PANE, 7, " ")
+            for (slot in borderSlots) {
                 buttons[slot] = filler
             }
         }
 
-        // ── ② Paginated CONTENT zone - MEDIUM PRIORITY (overwrites border if needed)
+        // ── ② Paginated CONTENT zone - MEDIUM PRIORITY (never overwrites border)
         val all = getAllPagesButtons(player).entries.toList()
-        val pageSlots = getAllPagesButtonSlots().ifEmpty { getInnerSlots(player) }
+        val pageSlots = getPageContentSlots(player, borderSlots)
         val perPage = pageSlots.size.coerceAtLeast(1)
 
         val total = all.size
@@ -135,30 +118,20 @@ abstract class PaginatedBorderedMenu : PaginatedMenu() {
         // ── ④ Page navigation buttons - HIGHEST PRIORITY (overwrites everything)
         val nav = getPageButtonSlots()
         if (nav != null) {
-            when (pageButtonType) {
-                PageButtonType.HEAD -> {
-                    buttons[nav.first] = PageButton(-1, this)
-                    buttons[nav.second] = PageButton(1, this)
-                }
+            if (page > 1) {
+                createPageButton(-1)?.let { buttons[nav.first] = it }
+            }
+            if (page < totalPages) {
+                createPageButton(1)?.let { buttons[nav.second] = it }
+            }
+        }
 
-                PageButtonType.ARROW -> {
-                    buttons[nav.first] = ArrowPageButton(-1, this)
-                    buttons[nav.second] = ArrowPageButton(1, this)
-                }
-
-                PageButtonType.PAPER -> {
-                    buttons[nav.first] = PaperPageButton(-1, this)
-                    buttons[nav.second] = PaperPageButton(1, this)
-                }
-
-                PageButtonType.CARPET -> {
-                    buttons[nav.first] = CarpetPageButton(-1, this)
-                    buttons[nav.second] = CarpetPageButton(1, this)
-                }
-
-                PageButtonType.MELON -> {
-                    buttons[nav.first] = MelonPageButton(-1, this)
-                    buttons[nav.second] = MelonPageButton(1, this)
+        // ── ⑤ Border LAST - ABSOLUTE HIGHEST PRIORITY (always on top)
+        if (hasBorder()) {
+            val filler = Button.placeholder(XMaterial.BLACK_STAINED_GLASS_PANE, 7, " ")
+            for (slot in borderSlots) {
+                if (buttons[slot] == null) {
+                    buttons[slot] = filler
                 }
             }
         }
@@ -174,13 +147,54 @@ abstract class PaginatedBorderedMenu : PaginatedMenu() {
 
     override fun getPages(player: Player): Int {
         val total = getAllPagesButtons(player).size
-        val perPage = getInnerSlots(player).size.coerceAtLeast(1)
+        val perPage = getPageContentSlots(player).size.coerceAtLeast(1)
         return ceil(total / perPage.toDouble()).toInt().coerceAtLeast(1)
     }
 
     override fun getMaxItemsPerPage(player: Player): Int {
-        return getInnerSlots(player).size
+        return getPageContentSlots(player).size
     }
 
     override fun getButtonsStartOffset(): Int = 0
+
+    private fun resolveMenuSize(player: Player): Int {
+        val configuredSize = getMenuSize()
+        var highestSlot = configuredSize - 1
+
+        getPageButtonSlots()?.let { (prev, next) ->
+            highestSlot = maxOf(highestSlot, prev, next)
+        }
+
+        getAllPagesButtonSlots().maxOrNull()?.let { highestSlot = maxOf(highestSlot, it) }
+
+        try {
+            getGlobalButtons(player)?.keys?.maxOrNull()?.let { highestSlot = maxOf(highestSlot, it) }
+        } catch (_: Exception) {
+        }
+
+        val minSlots = if (hasBorder()) 27 else 9
+        val resolved = (((highestSlot + 1) + 8) / 9) * 9
+        return maxOf(configuredSize, minSlots, resolved)
+    }
+
+    private fun computeBorderSlots(totalSlots: Int): List<Int> {
+        val borderSlots = mutableListOf<Int>()
+        val rows = totalSlots / 9
+
+        for (slot in 0 until totalSlots) {
+            val row = slot / 9
+            val col = slot % 9
+            if (row == 0 || row == rows - 1 || col == 0 || col == 8) {
+                borderSlots += slot
+            }
+        }
+
+        return borderSlots
+    }
+
+    private fun getPageContentSlots(player: Player, borderSlots: List<Int> = computeBorderSlots(resolveMenuSize(player))): List<Int> {
+        val borderSlotSet = borderSlots.toSet()
+        val rawPageSlots = getAllPagesButtonSlots().ifEmpty { getInnerSlots(player) }
+        return rawPageSlots.filter { it !in borderSlotSet }
+    }
 }

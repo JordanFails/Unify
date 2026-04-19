@@ -1,7 +1,9 @@
 package me.jordanfails.unify.utils
 
+import com.cryptomorin.xseries.XMaterial
 import me.jordanfails.unify.UnifyCore
 import net.kyori.adventure.text.Component
+import org.bukkit.Material
 import org.bukkit.entity.Player
 
 fun Player.sendMessage(text: Component) {
@@ -19,4 +21,8 @@ fun String.toTitleCase(): String {
             val lower = word.lowercase()
             lower.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
         }
+}
+
+fun XMaterial.get(): Material {
+    return this.parseMaterial()!!
 }

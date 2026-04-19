@@ -6,6 +6,7 @@ import me.jordanfails.unify.menu.Button
 import me.jordanfails.unify.menu.Menu
 import me.jordanfails.unify.menu.menus.PageButtonType
 import me.jordanfails.unify.menu.pagebuttons.CarpetPageButton
+import me.jordanfails.unify.menu.pagebuttons.HeadPageButton
 import me.jordanfails.unify.menu.pagebuttons.MelonPageButton
 import org.bukkit.ChatColor
 import org.bukkit.entity.Player
@@ -42,32 +43,16 @@ abstract class PaginatedMenu : Menu() {
 
     override fun getButtons(player: Player): MutableMap<Int, Button> {
         val buttons = HashMap<Int, Button>()
+        val totalPages = getPages(player).coerceAtLeast(1)
+        page = page.coerceIn(1, totalPages)
 
         // ── ① page navigation buttons
         getPageButtonSlots()?.let { slots ->
-            when (pageButtonType) {
-                PageButtonType.HEAD -> {
-                    buttons[slots.first] = PageButton(-1, this)
-                    buttons[slots.second] = PageButton(1, this)
-                }
-                PageButtonType.ARROW -> {
-                    buttons[slots.first] = ArrowPageButton(-1, this)
-                    buttons[slots.second] = ArrowPageButton(1, this)
-                }
-                PageButtonType.PAPER -> {
-                    buttons[slots.first] = PaperPageButton(-1, this)
-                    buttons[slots.second] = PaperPageButton(1, this)
-                }
-
-                PageButtonType.CARPET -> {
-                    buttons[slots.first] = CarpetPageButton(-1, this)
-                    buttons[slots.second] = CarpetPageButton(1, this)
-                }
-
-                PageButtonType.MELON -> {
-                    buttons[slots.first] = MelonPageButton(-1, this)
-                    buttons[slots.second] = MelonPageButton(1, this)
-                }
+            if (page > 1) {
+                createPageButton(-1)?.let { buttons[slots.first] = it }
+            }
+            if (page < totalPages) {
+                createPageButton(1)?.let { buttons[slots.second] = it }
             }
         }
 
@@ -129,6 +114,16 @@ abstract class PaginatedMenu : Menu() {
 
     open fun getAllPagesButtonSlots(): List<Int> {
         return emptyList()
+    }
+
+    protected fun createPageButton(mod: Int): Button? {
+        return when (pageButtonType) {
+            PageButtonType.HEAD -> HeadPageButton(mod, this)
+            PageButtonType.ARROW -> ArrowPageButton(mod, this)
+            PageButtonType.PAPER -> PaperPageButton(mod, this)
+            PageButtonType.CARPET -> CarpetPageButton(mod, this)
+            PageButtonType.MELON -> MelonPageButton(mod, this)
+        }
     }
 
 }

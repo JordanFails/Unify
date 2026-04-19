@@ -14,7 +14,7 @@ object XSupport {
     fun resolve(xMaterial: XMaterial, amount: Int = 1): ItemStack {
         val parsed = xMaterial.parseItem()
         return parsed?.clone()?.apply { this.amount = amount }
-            ?: ItemStack(Material.LIGHT_GRAY_STAINED_GLASS)
+            ?: ItemStack(XMaterial.LIGHT_GRAY_STAINED_GLASS.get())
     }
 
     fun resolveSound(xSound: XSound): Sound {

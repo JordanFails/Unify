@@ -6,6 +6,7 @@ import com.google.common.base.Joiner
 import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.utils.ItemBuilder
 import me.jordanfails.unify.utils.XSupport
+import me.jordanfails.unify.utils.get
 import org.apache.commons.lang.StringUtils
 import org.bukkit.ChatColor
 import org.bukkit.Material
@@ -176,6 +177,27 @@ abstract class Button {
 
                 override fun getMaterial(player: Player): Material {
                     return material
+                }
+
+                override fun getDamageValue(player: Player): Byte {
+                    return data
+                }
+            }
+        }
+
+        @JvmStatic
+        fun placeholder(material: XMaterial, data: Byte, title: String): Button {
+            return object : Button() {
+                override fun getName(player: Player): String {
+                    return title
+                }
+
+                override fun getDescription(player: Player): MutableList<String> {
+                    return mutableListOf()
+                }
+
+                override fun getMaterial(player: Player): Material {
+                    return material.get()
                 }
 
                 override fun getDamageValue(player: Player): Byte {

@@ -77,6 +77,22 @@ class NMSHandler_v1_16_R3 : NMSHandler {
         item.itemMeta = meta
     }
 
+    override fun applySkullOwner(item: ItemStack, ownerUuid: UUID?, ownerName: String?): Boolean {
+        val meta = item.itemMeta as? SkullMeta ?: return false
+        return try {
+            val owningPlayer = when {
+                ownerUuid != null -> Bukkit.getOfflinePlayer(ownerUuid)
+                !ownerName.isNullOrBlank() -> Bukkit.getOfflinePlayer(ownerName)
+                else -> return false
+            }
+            meta.setOwningPlayer(owningPlayer)
+            item.itemMeta = meta
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
     override fun applySkullTexture(item: ItemStack, base64Texture: String): Boolean {
         val meta = item.itemMeta as? SkullMeta ?: return false
         return try {
