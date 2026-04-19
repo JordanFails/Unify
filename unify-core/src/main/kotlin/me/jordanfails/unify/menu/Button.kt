@@ -77,6 +77,7 @@ abstract class Button {
         // Otherwise build from getName/getDescription/getMaterial
         val lore = getDescription(player) ?: mutableListOf()
         val buttonItem = ItemBuilder(getMaterial(player))
+            .data(getDamageValue(player).toShort())
             .name(getName(player))
             .lore(lore)
             .amount(getAmount(player))

@@ -6,6 +6,9 @@ import me.jordanfails.unify.menu.Button
 import me.jordanfails.unify.menu.Menu
 import me.jordanfails.unify.utils.CC
 import me.jordanfails.unify.utils.ItemBuilder
+import me.jordanfails.unify.nms.LegacyColorDataType
+import me.jordanfails.unify.nms.LegacyItemColor
+import me.jordanfails.unify.nms.NMSHandlerFactory
 import org.bukkit.Sound
 import org.bukkit.entity.Player
 import org.bukkit.event.inventory.ClickType
@@ -27,13 +30,20 @@ class ConfirmMenu(
 
     override fun getButtons(player: Player): MutableMap<Int, Button> {
         val buttons = mutableMapOf<Int, Button>()
+        val nms = NMSHandlerFactory.getHandler()
+        val blackGlassData = nms?.getLegacyColorData(LegacyItemColor.BLACK, LegacyColorDataType.BLOCK)
+            ?: LegacyItemColor.BLACK.blockData
+        val greenDyeData = nms?.getLegacyColorData(LegacyItemColor.GREEN, LegacyColorDataType.DYE)
+            ?: LegacyItemColor.GREEN.dyeData
+        val redDyeData = nms?.getLegacyColorData(LegacyItemColor.RED, LegacyColorDataType.DYE)
+            ?: LegacyItemColor.RED.dyeData
 
         // Decorative glass background
         for (i in 0 until 9) {
             buttons[i] = object : Button() {
                 override fun getButtonItem(player: Player): ItemStack {
                     return ItemBuilder(XMaterial.BLACK_STAINED_GLASS_PANE)
-                        .data(15.toShort())
+                        .data(blackGlassData.toShort())
                         .name(CC.translate("&r"))
                         .build()
                 }
@@ -54,7 +64,7 @@ class ConfirmMenu(
                             CC.translate("&7 ")
                         ).apply { addAll(extraInfo.map { CC.translate(it) }) }
                     )
-                    .data(10)
+                    .data(greenDyeData.toShort())
                     .build()
             }
 
@@ -78,7 +88,7 @@ class ConfirmMenu(
                             CC.translate("&7No changes will be made.")
                         )
                     )
-                    .data(1)
+                    .data(redDyeData.toShort())
                     .build()
             }
 

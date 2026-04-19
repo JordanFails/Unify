@@ -3,6 +3,9 @@ package me.jordanfails.unify.menu.pagebuttons
 import me.jordanfails.unify.menu.pagination.PaginatedMenu
 import me.jordanfails.unify.menu.Button
 import me.jordanfails.unify.menu.pagination.ViewAllPagesMenu
+import me.jordanfails.unify.nms.LegacyColorDataType
+import me.jordanfails.unify.nms.LegacyItemColor
+import me.jordanfails.unify.nms.NMSHandlerFactory
 import me.jordanfails.unify.utils.CC
 import me.jordanfails.unify.utils.ItemBuilder
 import org.bukkit.Material
@@ -53,7 +56,9 @@ class CarpetPageButton(private val mod: Int, private val menu: PaginatedMenu) : 
     }
 
     override fun getDamageValue(player: Player): Byte {
-        return 0.toByte()
+        val color = if (!hasNext(player)) LegacyItemColor.GRAY else LegacyItemColor.BLUE
+        return NMSHandlerFactory.getHandler()?.getLegacyColorData(color, LegacyColorDataType.BLOCK)
+            ?: color.blockData
     }
 
     override fun getMaterial(player: Player): Material {
@@ -66,6 +71,7 @@ class CarpetPageButton(private val mod: Int, private val menu: PaginatedMenu) : 
 
     override fun getButtonItem(player: Player): ItemStack {
         return ItemBuilder(getMaterial(player), 1)
+            .data(getDamageValue(player).toShort())
             .name(CC.translate(getName(player)))
             .lore(getDescription(player))
             .build()

@@ -3,6 +3,9 @@ package me.jordanfails.unify.menu.menus.menus
 import com.cryptomorin.xseries.XMaterial
 import me.jordanfails.unify.menu.Button
 import me.jordanfails.unify.menu.Menu
+import me.jordanfails.unify.nms.LegacyColorDataType
+import me.jordanfails.unify.nms.LegacyItemColor
+import me.jordanfails.unify.nms.NMSHandlerFactory
 import org.bukkit.Material
 import org.bukkit.entity.Player
 import kotlin.math.ceil
@@ -32,7 +35,12 @@ abstract class BorderedMenu(
      * The placeholder (visual filler) button used for the border slots.
      */
     open fun getPlaceholderButton(): Button =
-        Button.placeholder(Material.GRAY_STAINED_GLASS_PANE, 15.toByte(), " ", )
+        Button.placeholder(
+            Material.GRAY_STAINED_GLASS_PANE,
+            NMSHandlerFactory.getHandler()?.getLegacyColorData(LegacyItemColor.GRAY, LegacyColorDataType.BLOCK)
+                ?: LegacyItemColor.GRAY.blockData,
+            " "
+        )
 
     /**
      * Composes the menu layout with both borders and content.

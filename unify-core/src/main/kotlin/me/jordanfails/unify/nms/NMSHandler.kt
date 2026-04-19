@@ -28,6 +28,11 @@ interface NMSHandler {
     /** Sets item durability in a version-safe way. */
     fun setItemDurability(item: ItemStack, durability: Int)
     fun setItemData(item: ItemStack, data: Short)
+    fun getLegacyColorData(color: LegacyItemColor, type: LegacyColorDataType): Byte =
+        when (type) {
+            LegacyColorDataType.BLOCK -> color.blockData
+            LegacyColorDataType.DYE -> color.dyeData
+        }
     fun setItemUnbreakable(item: ItemStack, unbreakable: Boolean)
     fun applySkullOwner(item: ItemStack, ownerUuid: UUID? = null, ownerName: String? = null): Boolean
     fun applySkullTexture(item: ItemStack, base64Texture: String): Boolean

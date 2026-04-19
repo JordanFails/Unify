@@ -8,6 +8,9 @@ import me.jordanfails.unify.menu.menus.PageButtonType
 import me.jordanfails.unify.menu.pagebuttons.CarpetPageButton
 import me.jordanfails.unify.menu.pagebuttons.HeadPageButton
 import me.jordanfails.unify.menu.pagebuttons.MelonPageButton
+import me.jordanfails.unify.nms.LegacyColorDataType
+import me.jordanfails.unify.nms.LegacyItemColor
+import me.jordanfails.unify.nms.NMSHandlerFactory
 import org.bukkit.ChatColor
 import org.bukkit.entity.Player
 import kotlin.math.ceil
@@ -82,10 +85,12 @@ abstract class PaginatedBorderedMenu : PaginatedMenu() {
     override fun getButtons(player: Player): MutableMap<Int, Button> {
         val buttons = mutableMapOf<Int, Button>()
         val borderSlots = computeBorderSlots(resolveMenuSize(player))
+        val blackPaneData = NMSHandlerFactory.getHandler()?.getLegacyColorData(LegacyItemColor.BLACK, LegacyColorDataType.BLOCK)
+            ?: LegacyItemColor.BLACK.blockData
 
         // ── ① Border first (pure decoration) - LOWEST PRIORITY
         if (hasBorder()) {
-            val filler = Button.placeholder(XMaterial.BLACK_STAINED_GLASS_PANE, 7, " ")
+            val filler = Button.placeholder(XMaterial.BLACK_STAINED_GLASS_PANE, blackPaneData, " ")
             for (slot in borderSlots) {
                 buttons[slot] = filler
             }
@@ -128,7 +133,7 @@ abstract class PaginatedBorderedMenu : PaginatedMenu() {
 
         // ── ⑤ Border LAST - ABSOLUTE HIGHEST PRIORITY (always on top)
         if (hasBorder()) {
-            val filler = Button.placeholder(XMaterial.BLACK_STAINED_GLASS_PANE, 7, " ")
+            val filler = Button.placeholder(XMaterial.BLACK_STAINED_GLASS_PANE, blackPaneData, " ")
             for (slot in borderSlots) {
                 if (buttons[slot] == null) {
                     buttons[slot] = filler

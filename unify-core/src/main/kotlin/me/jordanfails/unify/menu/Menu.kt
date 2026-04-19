@@ -2,6 +2,8 @@ package me.jordanfails.unify.menu
 
 import com.cryptomorin.xseries.XMaterial
 import me.jordanfails.unify.UnifyCore
+import me.jordanfails.unify.nms.LegacyColorDataType
+import me.jordanfails.unify.nms.LegacyItemColor
 import me.jordanfails.unify.nms.NMSHandlerFactory
 import me.jordanfails.unify.utils.XSupport
 import org.bukkit.Bukkit
@@ -86,7 +88,12 @@ abstract class Menu {
         val inv = Bukkit.createInventory(null, size, title)
         // Fill background if enabled
         if (fillBackground) {
-            val filler = Button.placeholder(filledMaterial, 15.toByte(), " ")
+            val filler = Button.placeholder(
+                filledMaterial,
+                NMSHandlerFactory.getHandler()?.getLegacyColorData(LegacyItemColor.GRAY, LegacyColorDataType.BLOCK)
+                    ?: LegacyItemColor.GRAY.blockData,
+                " "
+            )
             for (slot in 0 until size) {
                 buttons[slot] = filler
                 inv.setItem(slot, filler.getButtonItem(player))
@@ -103,7 +110,12 @@ abstract class Menu {
         }
 
         if (placeholder) {
-            val placeholder = Button.placeholder(XMaterial.GRAY_STAINED_GLASS_PANE, 15.toByte(), " ")
+            val placeholder = Button.placeholder(
+                XMaterial.GRAY_STAINED_GLASS_PANE,
+                NMSHandlerFactory.getHandler()?.getLegacyColorData(LegacyItemColor.GRAY, LegacyColorDataType.BLOCK)
+                    ?: LegacyItemColor.GRAY.blockData,
+                " "
+            )
 
             for (index in 0 until size(invButtons)) {
                 if (invButtons[index] == null) {
