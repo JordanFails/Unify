@@ -3,7 +3,6 @@ package me.jordanfails.unify.nms.v1_21_R1
 import de.tr7zw.nbtapi.NBT
 import io.papermc.paper.adventure.PaperAdventure
 import com.mojang.authlib.GameProfile
-import com.mojang.authlib.properties.Property
 import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.bossbar.BossBarColor
 import me.jordanfails.unify.bossbar.BossBarStyle
@@ -29,6 +28,7 @@ import net.minecraft.network.protocol.game.ClientboundSetObjectivePacket
 import net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket
 import net.minecraft.network.protocol.game.ClientboundSetScorePacket
 import net.minecraft.network.protocol.game.ClientboundTabListPacket
+import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ClientInformation
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.server.network.CommonListenerCookie
@@ -36,7 +36,6 @@ import net.minecraft.server.network.ServerGamePacketListenerImpl
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.decoration.ArmorStand
 import net.minecraft.world.entity.item.ItemEntity
-import net.minecraft.world.item.component.ResolvableProfile
 import net.minecraft.world.scores.DisplaySlot
 import net.minecraft.world.scores.Objective
 import net.minecraft.world.scores.PlayerTeam
@@ -53,7 +52,6 @@ import org.bukkit.craftbukkit.CraftServer
 import org.bukkit.craftbukkit.CraftWorld
 import org.bukkit.craftbukkit.entity.CraftPlayer
 import org.bukkit.craftbukkit.inventory.CraftItemStack
-import org.bukkit.craftbukkit.profile.CraftPlayerProfile
 import org.bukkit.entity.Player
 import org.bukkit.inventory.Inventory
 import org.bukkit.inventory.ItemStack
@@ -91,15 +89,9 @@ class NMSHandler_v1_21_R1 : NMSHandler {
     }
 
     override fun getTPS(): DoubleArray {
-        return try {
-            val serverClass = Bukkit.getServer().javaClass
-            val getServerMethod = serverClass.getMethod("getServer")
-            val minecraftServer = getServerMethod.invoke(Bukkit.getServer())
-            val tpsField = minecraftServer.javaClass.getField("recentTps")
-            tpsField.get(minecraftServer) as DoubleArray
-        } catch (e: Exception) {
-            doubleArrayOf(20.0, 20.0, 20.0)
-        }
+        val serverTPS = Bukkit.getServer().tps
+
+        return serverTPS
     }
 
     override fun setItemDurability(item: ItemStack, durability: Int) {
@@ -576,7 +568,7 @@ class NMSHandler_v1_21_R1 : NMSHandler {
      * NPC server-players do not have a real client, so attach a no-op listener.
      */
     private fun attachFakeConnection(
-        server: net.minecraft.server.MinecraftServer,
+        server: MinecraftServer,
         npc: ServerPlayer,
         profile: GameProfile,
     ) {
