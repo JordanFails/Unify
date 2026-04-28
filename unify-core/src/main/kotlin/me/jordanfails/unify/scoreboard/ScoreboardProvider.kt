@@ -10,8 +10,6 @@ abstract class ScoreboardProvider(val name: String, val weight: Int) {
 
     class DefaultScoreboardProvider : ScoreboardProvider("Default Provider", 0) {
         override fun fetchScoreboard(player: Player): ScoreboardInfo {
-//            val phase = ((System.currentTimeMillis() % 4000L).toDouble() / 4000.0) * 2.0 - 1.0
-//            val title = "<rainbow:${String.format(Locale.US, "%.2f", phase)}><bold>Unify</bold></rainbow>"
             return createScoreboard(UnifyCore.instance.config.getString("scoreboard.title", "&d&lHUB")!!, UnifyCore.instance.config.getStringList("scoreboard.lines"))
         }
     }

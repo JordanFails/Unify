@@ -3,6 +3,7 @@ package me.jordanfails.unify.utils
 import com.cryptomorin.xseries.XMaterial
 import me.jordanfails.unify.UnifyCore
 import net.kyori.adventure.text.Component
+import org.bukkit.Location
 import org.bukkit.Material
 import org.bukkit.entity.Player
 
@@ -25,4 +26,19 @@ fun String.toTitleCase(): String {
 
 fun XMaterial.get(): Material {
     return this.parseMaterial()!!
+}
+
+fun Location.toFastLocation(): FastLocation {
+    return FastLocation(this)
+}
+
+fun FastLocation.toBukkitLocation(): Location {
+    return Location(
+        UnifyCore.instance.server.getWorld(worldName!!),
+        x,
+        y,
+        z,
+        yaw,
+        pitch
+    )
 }

@@ -36,7 +36,7 @@ abstract class BorderedMenu(
      */
     open fun getPlaceholderButton(): Button =
         Button.placeholder(
-            Material.GRAY_STAINED_GLASS_PANE,
+            XMaterial.GRAY_STAINED_GLASS_PANE,
             NMSHandlerFactory.getHandler()?.getLegacyColorData(LegacyItemColor.GRAY, LegacyColorDataType.BLOCK)
                 ?: LegacyItemColor.GRAY.blockData,
             " "

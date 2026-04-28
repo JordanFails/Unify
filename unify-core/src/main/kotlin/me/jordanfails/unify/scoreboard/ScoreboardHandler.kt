@@ -54,7 +54,7 @@ object ScoreboardHandler {
             }
         }, 20L, updateInterval.toLong())
 
-        registerProvider(ScoreboardProvider.DefaultScoreboardProvider())
+//        registerProvider(ScoreboardProvider.DefaultScoreboardProvider())
         Bukkit.getOnlinePlayers().forEach { reloadPlayer(it) }
     }
 
