@@ -84,6 +84,13 @@ object ScoreboardHandler {
         }
 
         if (provided == null) {
+            val hadBoard = playerBoards.remove(player.uniqueId)
+            if (hadBoard != null) {
+                Bukkit.getScheduler().runTask(UnifyCore.instance, Runnable {
+                    if (!player.isOnline) return@Runnable
+                    ScoreboardPacket.removePacketSidebar(player)
+                })
+            }
             return
         }
 

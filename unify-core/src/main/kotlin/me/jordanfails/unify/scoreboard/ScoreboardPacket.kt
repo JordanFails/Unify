@@ -42,6 +42,12 @@ class ScoreboardPacket(
                 suffix,
             )
         }
+
+        // Drop trailing slots when line count shrinks (e.g. game switch); otherwise old rows stay visible.
+        for (rowIndex in rows.size until MAX_SIDEBAR_ROWS) {
+            val stableEntry = stableSidebarEntry(rowIndex)
+            nms.sendScoreboardScore(player, objectiveName, stableEntry, 0, 1) // REMOVE
+        }
     }
 
     fun remove(player: Player) {
@@ -52,6 +58,9 @@ class ScoreboardPacket(
     companion object {
 
         private const val SIDEBAR_OBJECTIVE = "sidebar"
+
+        /** Must match [stableSidebarEntry] valid indices (sidebar allows 15 lines). */
+        private const val MAX_SIDEBAR_ROWS = 15
 
         private fun buildSidebarRows(info: ScoreboardInfo): List<Pair<String, Int>> {
             val displayLines = info.lines.take(15)
@@ -91,6 +100,12 @@ class ScoreboardPacket(
 
         fun createFromInfo(info: ScoreboardInfo): ScoreboardPacket {
             return ScoreboardPacket(SIDEBAR_OBJECTIVE, info.title, buildSidebarRows(info))
+        }
+
+        /** Removes Unify's packet sidebar ([SIDEBAR_OBJECTIVE]) from the client when no provider applies. */
+        fun removePacketSidebar(player: Player) {
+            val nms = UnifyCore.instance.nms ?: return
+            nms.sendScoreboardObjective(player, SIDEBAR_OBJECTIVE, "", 1) // REMOVE
         }
     }
 }
