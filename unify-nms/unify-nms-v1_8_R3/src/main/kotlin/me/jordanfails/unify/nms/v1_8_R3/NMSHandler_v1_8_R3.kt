@@ -422,6 +422,35 @@ class NMSHandler_v1_8_R3 : NMSHandler {
             e.printStackTrace()
         }
     }
+
+    override fun sendScoreboardSidebarTeamLine(
+        player: Player,
+        teamName: String,
+        scoreboardEntry: String,
+        prefix: String,
+        suffix: String,
+    ) {
+        try {
+            val connection = (player as CraftPlayer).handle.playerConnection
+            val packet = PacketPlayOutScoreboardTeam()
+            val safeTeam = teamName.take(16)
+            setField(packet, "a", safeTeam)
+            setField(packet, "b", "")
+            setField(packet, "c", prefix.take(16))
+            setField(packet, "d", suffix.take(16))
+            setField(packet, "e", "always")
+            setField(packet, "f", 0)
+            @Suppress("UNCHECKED_CAST")
+            val players = getField(packet, "g") as MutableCollection<String>
+            players.clear()
+            players.add(scoreboardEntry)
+            setField(packet, "h", 0)
+            setField(packet, "i", 0)
+            connection.sendPacket(packet)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
     
     // --- BossBar Implementation for 1.8 (uses Wither entity) ---
     private val playerWitherIds = mutableMapOf<java.util.UUID, MutableMap<java.util.UUID, Int>>()

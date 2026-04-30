@@ -104,6 +104,18 @@ interface NMSHandler {
      * @param mode 0 = CHANGE, 1 = REMOVE
      */
     fun sendScoreboardScore(player: Player, objectiveName: String, entry: String, score: Int, mode: Int)
+
+    /**
+     * Sidebar row styling: [scoreboardEntry] is a stable internal fake name (never shown as the full line);
+     * [prefix] + [suffix] are legacy §-coded fragments (already truncated to version limits by caller).
+     */
+    fun sendScoreboardSidebarTeamLine(
+        player: Player,
+        teamName: String,
+        scoreboardEntry: String,
+        prefix: String,
+        suffix: String,
+    )
     
     // --- BossBar API ---
     /**

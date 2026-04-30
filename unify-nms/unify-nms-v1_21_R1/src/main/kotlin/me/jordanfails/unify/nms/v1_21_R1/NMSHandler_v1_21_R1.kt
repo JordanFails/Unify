@@ -996,6 +996,30 @@ class NMSHandler_v1_21_R1 : NMSHandler {
         }
     }
 
+    override fun sendScoreboardSidebarTeamLine(
+        player: Player,
+        teamName: String,
+        scoreboardEntry: String,
+        prefix: String,
+        suffix: String,
+    ) {
+        try {
+            val scoreboard = Scoreboard()
+            val team = PlayerTeam(scoreboard, teamName)
+            team.displayName = Component.literal(teamName)
+            team.playerPrefix = Component.literal(prefix)
+            team.playerSuffix = Component.literal(suffix)
+            team.color = getChatFormatting(extractColorCode(prefix))
+            team.nameTagVisibility = Team.Visibility.ALWAYS
+            team.collisionRule = Team.CollisionRule.NEVER
+            team.players.add(scoreboardEntry)
+            val packet = ClientboundSetPlayerTeamPacket.createAddOrModifyPacket(team, true)
+            (player as CraftPlayer).handle.connection.send(packet)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     private fun createObjective(name: String, displayName: Component): Objective {
         val dummyScoreboard = Scoreboard()
         return dummyScoreboard.addObjective(

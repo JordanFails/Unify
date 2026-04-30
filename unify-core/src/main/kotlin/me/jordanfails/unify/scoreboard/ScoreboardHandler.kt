@@ -87,17 +87,16 @@ object ScoreboardHandler {
             return
         }
 
-        val currentBoard = playerBoards[player.uniqueId]
-        if (currentBoard != null && currentBoard == provided) {
+        val previousBoard = playerBoards[player.uniqueId]
+        if (previousBoard != null && previousBoard == provided) {
             return
         }
-
 
         playerBoards[player.uniqueId] = provided
 
         Bukkit.getScheduler().runTask(UnifyCore.instance, Runnable {
             if (!player.isOnline) return@Runnable
-            
+
             val packet = ScoreboardPacket.createFromInfo(provided)
             packet.send(player)
         })

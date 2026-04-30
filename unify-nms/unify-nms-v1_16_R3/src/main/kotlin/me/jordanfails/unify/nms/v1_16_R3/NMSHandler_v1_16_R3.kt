@@ -407,6 +407,36 @@ class NMSHandler_v1_16_R3 : NMSHandler {
             e.printStackTrace()
         }
     }
+
+    override fun sendScoreboardSidebarTeamLine(
+        player: Player,
+        teamName: String,
+        scoreboardEntry: String,
+        prefix: String,
+        suffix: String,
+    ) {
+        try {
+            val connection = (player as CraftPlayer).handle.playerConnection
+            val packet = PacketPlayOutScoreboardTeam()
+            val safeName = teamName.take(16)
+            setField(packet, "a", safeName)
+            setField(packet, "b", ChatComponentText(safeName))
+            setField(packet, "c", ChatComponentText(prefix))
+            setField(packet, "d", ChatComponentText(suffix))
+            setField(packet, "e", "always")
+            setField(packet, "f", "always")
+            setField(packet, "g", 15)
+            @Suppress("UNCHECKED_CAST")
+            val players = getField(packet, "h") as MutableCollection<String>
+            players.clear()
+            players.add(scoreboardEntry)
+            setField(packet, "i", 0)
+            setField(packet, "j", 0)
+            connection.sendPacket(packet)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
     
     // --- BossBar Implementation (uses Bukkit API for 1.9+) ---
     private val playerBossBars = mutableMapOf<UUID, MutableMap<UUID, BossBar>>()

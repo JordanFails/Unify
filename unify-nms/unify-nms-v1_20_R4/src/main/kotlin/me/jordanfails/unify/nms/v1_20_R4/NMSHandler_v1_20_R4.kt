@@ -525,6 +525,30 @@ class NMSHandler_v1_20_R4 : NMSHandler {
             e.printStackTrace()
         }
     }
+
+    override fun sendScoreboardSidebarTeamLine(
+        player: Player,
+        teamName: String,
+        scoreboardEntry: String,
+        prefix: String,
+        suffix: String,
+    ) {
+        try {
+            val scoreboard = net.minecraft.world.scores.Scoreboard()
+            val team = PlayerTeam(scoreboard, teamName)
+            team.displayName = net.minecraft.network.chat.Component.literal(teamName)
+            team.playerPrefix = net.minecraft.network.chat.Component.literal(prefix)
+            team.playerSuffix = net.minecraft.network.chat.Component.literal(suffix)
+            team.color = getChatFormatting(extractColorCode(prefix))
+            team.nameTagVisibility = Team.Visibility.ALWAYS
+            team.collisionRule = Team.CollisionRule.NEVER
+            team.players.add(scoreboardEntry)
+            val packet = net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket.createAddOrModifyPacket(team, true)
+            (player as CraftPlayer).handle.connection.send(packet)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
     
     // --- BossBar Implementation (uses Bukkit API for 1.9+) ---
     private val playerBossBars = mutableMapOf<UUID, MutableMap<UUID, BossBar>>()
