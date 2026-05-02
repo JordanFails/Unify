@@ -1,5 +1,7 @@
 scoreboard:
+  enabled: true
   title: "&d&lHUB"
+  update-interval-ticks: 20
   lines:
     - "&fRank: &d<rank>"
     - "&fFriends Online: &d0"

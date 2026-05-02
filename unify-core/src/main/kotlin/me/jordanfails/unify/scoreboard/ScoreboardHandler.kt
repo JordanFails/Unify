@@ -2,6 +2,7 @@ package me.jordanfails.unify.scoreboard
 
 import com.google.common.primitives.Ints
 import me.jordanfails.unify.UnifyCore
+import me.jordanfails.unify.config.UnifyConfig
 import me.jordanfails.unify.scoreboard.thread.ScoreboardThread
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
@@ -12,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap
 object ScoreboardHandler {
 
     private val playerBoards = ConcurrentHashMap<UUID, ScoreboardInfo>()
-    private var providers = ArrayList<ScoreboardProvider>()
+    private val providers = ArrayList<ScoreboardProvider>()
     
     private var enabled: Boolean = false
     private var async: Boolean = true
@@ -26,12 +27,8 @@ object ScoreboardHandler {
     }
 
     fun reloadAll() {
-        val config = UnifyCore.instance.config
-        enabled = config.getBoolean("scoreboard.enabled", true)
-        updateInterval = config
-            .getInt("scoreboard.update-interval-ticks",
-                config.getInt("scoreboards.update-interval-ticks", updateInterval))
-            .coerceAtLeast(1)
+        enabled = UnifyConfig.Scoreboard.ENABLED.get()
+        updateInterval = UnifyConfig.Scoreboard.UPDATE_INTERVAL.get().coerceAtLeast(1)
 
         refreshTask?.cancel()
         refreshTask = null
@@ -54,7 +51,6 @@ object ScoreboardHandler {
             }
         }, 20L, updateInterval.toLong())
 
-//        registerProvider(ScoreboardProvider.DefaultScoreboardProvider())
         Bukkit.getOnlinePlayers().forEach { reloadPlayer(it) }
     }
 
