@@ -85,17 +85,62 @@ class ScoreboardPacket(
             return if (base.length <= 16) base else base.take(16)
         }
 
+        /**
+         * Splits a legacy §-colored line into team prefix/suffix without cutting between `§` and its
+         * format character (which would leak naked letters/digits next to the fake score entry).
+         */
         internal fun splitSidebarPrefixSuffix(
             translatedLine: String,
             prefixLimit: Int,
             suffixLimit: Int,
         ): Pair<String, String> {
-            if (translatedLine.length <= prefixLimit) {
+            val units = legacyColorUnits(translatedLine)
+            val totalChars = units.sumOf { it.length }
+            if (totalChars <= prefixLimit) {
                 return translatedLine to ""
             }
-            val prefix = translatedLine.take(prefixLimit)
-            val suffix = translatedLine.drop(prefixLimit).take(suffixLimit.coerceAtLeast(0))
-            return prefix to suffix
+            val prefixUnits = mutableListOf<String>()
+            var prefixLen = 0
+            for (u in units) {
+                val ul = u.length
+                if (prefixLen + ul <= prefixLimit) {
+                    prefixUnits.add(u)
+                    prefixLen += ul
+                } else {
+                    break
+                }
+            }
+            val rest = units.drop(prefixUnits.size)
+            val suffixUnits = mutableListOf<String>()
+            var suffixLen = 0
+            val cap = suffixLimit.coerceAtLeast(0)
+            for (u in rest) {
+                val ul = u.length
+                if (suffixLen + ul <= cap) {
+                    suffixUnits.add(u)
+                    suffixLen += ul
+                } else {
+                    break
+                }
+            }
+            return prefixUnits.joinToString("") to suffixUnits.joinToString("")
+        }
+
+        /** Each element is one visible char or one legacy pair `§` + modifier (`§e`, `§r`, …). */
+        internal fun legacyColorUnits(line: String): List<String> {
+            val out = ArrayList<String>()
+            var i = 0
+            while (i < line.length) {
+                val c = line[i]
+                if (c == '\u00A7' && i + 1 < line.length) {
+                    out.add(line.substring(i, i + 2))
+                    i += 2
+                } else {
+                    out.add(c.toString())
+                    i += 1
+                }
+            }
+            return out
         }
 
         fun createFromInfo(info: ScoreboardInfo): ScoreboardPacket {
