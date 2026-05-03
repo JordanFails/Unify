@@ -27,8 +27,8 @@ object ScoreboardHandler {
     }
 
     fun reloadAll() {
-        enabled = UnifyConfig.Scoreboard.ENABLED.get()
-        updateInterval = UnifyConfig.Scoreboard.UPDATE_INTERVAL.get().coerceAtLeast(1)
+        enabled = UnifyConfig.Scoreboard.enabled.get()
+        updateInterval = UnifyConfig.Scoreboard.updateInterval.get().coerceAtLeast(1)
 
         refreshTask?.cancel()
         refreshTask = null
