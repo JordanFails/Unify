@@ -53,6 +53,7 @@ class UnifyCore : JavaPlugin() {
     }
 
     override fun onDisable() {
+        NametagHandler.clearAllOverlays()
         NPCManager.disable()
         HologramManager.disable()
     }

@@ -5,7 +5,7 @@ import kotlin.time.Duration.Companion.milliseconds
 
 data class Expirable(
     val addedAt: Long = System.currentTimeMillis(),
-    val duration: Duration, // Use Duration instead of raw Long
+    val duration: Duration,
 ) {
     companion object {
         /** Creates an Expirable that never expires. */

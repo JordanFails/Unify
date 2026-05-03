@@ -39,9 +39,15 @@ class UnifyHologram(
     }
 
     fun teleport(location: Location) {
+        move(location, persist = true)
+    }
+
+    fun move(location: Location, persist: Boolean = false) {
         this.location = location
         refresh()
-        HologramManager.markDirty()
+        if (persist) {
+            HologramManager.markDirty()
+        }
     }
     
     // --- Text Line Methods ---

@@ -22,6 +22,8 @@ object NametagListener : Listener {
     fun onPlayerQuit(event: PlayerQuitEvent) {
         event.player.removeMetadata("Nametag-Applied", UnifyCore.instance)
         NametagHandler.teamMap.remove(event.player.uniqueId)
+        NametagHandler.clearViewer(event.player)
+        NametagHandler.clearTarget(event.player)
     }
 
 }

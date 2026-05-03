@@ -13,6 +13,14 @@ scoreboard:
     - ""
     - "&eplay.etheriamc.net"
 
+nametags:
+  enabled: true
+  update-interval-ticks: 20
+  # Optional alias shown above the player's head.
+  # When set, the vanilla nametag is hidden and this text is rendered as a floating label.
+  # Placeholders: {player} = account name, {display_name} = Bukkit display name.
+  display-name-format: ""
+
 tab:
   enabled: true
   update-interval-ticks: 40
