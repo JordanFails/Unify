@@ -9,6 +9,8 @@ import org.yaml.snakeyaml.constructor.SafeConstructor
 import java.io.File
 import java.io.FileReader
 import java.io.FileWriter
+import java.math.BigDecimal
+import java.math.BigInteger
 import java.nio.file.FileSystems
 import java.nio.file.StandardWatchEventKinds.*
 import java.util.concurrent.ConcurrentHashMap
@@ -202,6 +204,16 @@ class Config(
         Map::class -> (value as Map<*, *>) as T
         Material::class -> Material.matchMaterial(value.toString()) as T
         Color::class -> Color.fromRGB((value as Number).toInt()) as T
+        BigDecimal::class -> when (value) {
+            is BigDecimal -> value as T
+            is Number -> BigDecimal(value.toString()) as T
+            else -> BigDecimal(value.toString()) as T
+        }
+        BigInteger::class -> when (value) {
+            is BigInteger -> value as T
+            is Number -> BigInteger(value.toString()) as T
+            else -> BigInteger(value.toString()) as T
+        }
         else -> {
             if (value is Map<*, *> && type.isData) {
                 mapToDataClass(value as Map<String, Any>, type)
@@ -247,6 +259,16 @@ class Config(
         Boolean::class -> value as Boolean
         Material::class -> Material.matchMaterial(value.toString())
         Color::class -> Color.fromRGB((value as Number).toInt())
+        BigDecimal::class -> when (value) {
+            is BigDecimal -> value
+            is Number -> BigDecimal(value.toString())
+            else -> BigDecimal(value.toString())
+        }
+        BigInteger::class -> when (value) {
+            is BigInteger -> value
+            is Number -> BigInteger(value.toString())
+            else -> BigInteger(value.toString())
+        }
         else -> when {
             paramType?.isData == true && value is Map<*, *> ->
                 mapToDataClass(value as Map<String, Any>, paramType)

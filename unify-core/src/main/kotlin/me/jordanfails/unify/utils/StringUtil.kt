@@ -1,5 +1,9 @@
 package me.jordanfails.unify.utils
 
+import me.jordanfails.unify.UnifyCore
+import me.jordanfails.unify.nms.NMSHandler
+import me.jordanfails.unify.nms.ServerVersion
+import net.kyori.adventure.text.Component
 import org.bukkit.ChatColor
 import java.text.DecimalFormat
 import java.text.NumberFormat
@@ -12,8 +16,7 @@ import kotlin.math.min
 object StringUtil {
 
     private val DECIMAL_FORMAT = DecimalFormat("#.##")
-    private val CURRENCY_FORMAT: NumberFormat =
-        NumberFormat.getCurrencyInstance(Locale.US)
+    private val CURRENCY_FORMAT: NumberFormat = NumberFormat.getCurrencyInstance(Locale.US)
 
     @JvmStatic
     @Deprecated("Using old methods", level = DeprecationLevel.ERROR)
@@ -261,7 +264,6 @@ object StringUtil {
             repeat(leftOver) { append(bar) }
         }
     }
-
     // ---------- STRING FORMS ----------
     @JvmStatic
     fun fixPlural(str: String): String =

@@ -10,6 +10,7 @@ import me.jordanfails.unify.exception.InvalidOutputException
 import me.jordanfails.unify.hologram.HologramLine
 import me.jordanfails.unify.hologram.UnifyHologram
 import me.jordanfails.unify.nms.NMSHandler
+import me.jordanfails.unify.nms.ServerVersion
 import me.jordanfails.unify.npc.UnifyNPC
 import net.minecraft.server.v1_9_R2.*
 import org.bukkit.Bukkit
@@ -49,8 +50,8 @@ class NMSHandler_v1_9_R2 : NMSHandler {
         connection.sendPacket(PacketPlayOutTitle(fadeIn, stay, fadeOut))
     }
 
-    override fun getServerVersion(): String {
-        return Bukkit.getBukkitVersion().split("-").first()
+    override fun getServerVersion(): ServerVersion {
+        return ServerVersion.v1_9_R2
     }
 
     override fun getPing(player: Player): Int {

@@ -18,7 +18,7 @@ interface NMSHandler {
     fun sendTitle(player: Player, title: String, subtitle: String?, fadeIn: Int = 10, stay: Int = 70, fadeOut: Int = 20)
 
     /** Example: get server‑specific version string */
-    fun getServerVersion(): String
+    fun getServerVersion(): ServerVersion
 
     fun getPing(player: Player): Int
 

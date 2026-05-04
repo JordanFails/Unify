@@ -8,6 +8,7 @@ import me.jordanfails.unify.bossbar.UnifyBossBar
 import me.jordanfails.unify.hologram.HologramLine
 import me.jordanfails.unify.hologram.UnifyHologram
 import me.jordanfails.unify.nms.NMSHandler
+import me.jordanfails.unify.nms.ServerVersion
 import me.jordanfails.unify.npc.UnifyNPC
 import net.minecraft.server.v1_12_R1.*
 import me.jordanfails.unify.UnifyCore
@@ -45,8 +46,8 @@ class NMSHandler_v1_12_R1 : NMSHandler {
         )
     }
 
-    override fun getServerVersion(): String {
-        return Bukkit.getBukkitVersion().split("-").first()
+    override fun getServerVersion(): ServerVersion {
+        return ServerVersion.v1_12_R1
     }
 
     override fun getPing(player: Player): Int {

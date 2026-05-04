@@ -1,5 +1,10 @@
 package me.jordanfails.unify.utils
 
+import me.jordanfails.unify.UnifyCore
+import me.jordanfails.unify.nms.NMSHandler
+import me.jordanfails.unify.nms.ServerVersion
+import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.format.TextDecoration
 import net.kyori.adventure.text.minimessage.MiniMessage
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
 import org.apache.commons.lang.StringEscapeUtils
@@ -28,6 +33,9 @@ object CC {
     val ARROW_LAST = "←"
     val STAR = "✫"
     val STAR_FILLED = "★"
+
+
+    private val NMS_HANDLER: NMSHandler? = UnifyCore.instance.nms
 
     @JvmStatic
     val LONG_LINE = ChatColor.STRIKETHROUGH.toString() + org.apache.commons.lang3.StringUtils.repeat("-", 53)
@@ -297,6 +305,8 @@ object CC {
     fun translate(list: List<String?>): List<String> =
         list.filterNotNull().map { translate(it) }
 
+
+
     /**
      * Translates varargs of strings.
      */
@@ -456,5 +466,27 @@ object CC {
     @JvmStatic
     fun formatTranslate(input: String, vararg arguments: Any?): String {
         return translate(format(input, *arguments))
+    }
+
+    @JvmStatic
+    fun translateComponent(message: String): Component {
+        if(NMS_HANDLER!!.getServerVersion().isBelow(ServerVersion.v1_9_R2)) {
+            throw IllegalStateException("The Kyori Component API isn't supported on 1.8.8 and below!")
+        }
+        return LegacyComponentSerializer.legacy(LegacyComponentSerializer.SECTION_CHAR).deserialize(
+            translate(
+                message
+            )
+        )
+            .decoration(TextDecoration.ITALIC, TextDecoration.State.FALSE)
+    }
+
+    @JvmStatic
+    fun component(message: String): Component {
+        if(NMS_HANDLER!!.getServerVersion().isBelow(ServerVersion.v1_9_R2)) {
+            throw IllegalStateException("The Kyori Component API isn't supported on 1.8.8 and below!")
+        }
+        return MiniMessage.miniMessage().deserialize(message)
+            .decoration(TextDecoration.ITALIC, TextDecoration.State.FALSE)
     }
 }

@@ -15,6 +15,7 @@ import co.aikar.commands.bukkit.contexts.OnlinePlayer
 import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.hologram.HologramManager
 import me.jordanfails.unify.nametag.NametagHandler
+import me.jordanfails.unify.nms.ServerVersion
 import me.jordanfails.unify.npc.NPCManager
 import me.jordanfails.unify.scoreboard.ScoreboardHandler
 import me.jordanfails.unify.tab.TabHandler
@@ -42,7 +43,7 @@ class UnifyAdminCommand : BaseCommand() {
     @Description("Show plugin and NMS version info")
     fun onVersion(sender: CommandSender) {
         val plugin = UnifyCore.instance
-        val nmsVersion = plugin.nms?.getServerVersion() ?: "unavailable"
+        val nmsVersion = plugin.nms?.getServerVersion()?.versionString ?: "unavailable"
 
         sender.sendMessage(CC.translate("&6&lUnify Version"))
         sender.sendMessage(CC.translate("&7Plugin: &f${plugin.description.name} v${plugin.description.version}"))
@@ -124,7 +125,7 @@ class UnifyAdminCommand : BaseCommand() {
         sender.sendMessage(CC.translate("&7World: &f${target.world.name} &7at &f${target.location.blockX}, ${target.location.blockY}, ${target.location.blockZ}"))
         sender.sendMessage(CC.translate("&7Ping: &f${ping}ms"))
         sender.sendMessage(CC.translate("&7Vanished: &f${if (vanished) "&aYes" else "&cNo"}"))
-        sender.sendMessage(CC.translate("&7NMS Handler: &f${nms?.getServerVersion() ?: "unavailable"}"))
+        sender.sendMessage(CC.translate("&7NMS Handler: &f${nms?.getServerVersion()?.versionString ?: "unavailable"}"))
         sender.sendMessage(CC.translate("&7Scoreboard: &f${if (ScoreboardHandler.isEnabled()) "enabled" else "disabled"} &7(${ScoreboardHandler.updateInterval}t, providers=${ScoreboardHandler.providerCount()})"))
         sender.sendMessage(CC.translate("&7Tab: &f${if (TabHandler.isEnabled()) "enabled" else "disabled"} &7(${TabHandler.updateInterval}t, providers=${TabHandler.providerCount()})"))
         sender.sendMessage(CC.translate("&7Nametags: &f${if (NametagHandler.isEnabled()) "enabled" else "disabled"} &7(${NametagHandler.updateInterval}t, providers=${NametagHandler.providerCount()})"))

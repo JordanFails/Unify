@@ -10,6 +10,7 @@ import me.jordanfails.unify.bossbar.UnifyBossBar
 import me.jordanfails.unify.hologram.HologramLine
 import me.jordanfails.unify.hologram.UnifyHologram
 import me.jordanfails.unify.nms.NMSHandler
+import me.jordanfails.unify.nms.ServerVersion
 import me.jordanfails.unify.npc.UnifyNPC
 import net.kyori.adventure.text.minimessage.MiniMessage
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
@@ -80,8 +81,8 @@ class NMSHandler_v1_21_R1 : NMSHandler {
         player.sendTitle(title, subtitle ?: "", fadeIn, stay, fadeOut)
     }
 
-    override fun getServerVersion(): String {
-        return Bukkit.getBukkitVersion().split("-").first()
+    override fun getServerVersion(): ServerVersion {
+        return ServerVersion.v1_21_R1
     }
 
     override fun getPing(player: Player): Int {
