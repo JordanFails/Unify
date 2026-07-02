@@ -84,7 +84,6 @@ class UnifyCore : JavaPlugin() {
             HologramCommand(),
             NPCCommand(),
             PingCommand(),
-//            VanishCommand(),
             UnifyAdminCommand()
         ).forEach { commandManager.registerCommand(it) }
     }

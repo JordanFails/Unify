@@ -36,11 +36,11 @@ dependencies {
     implementation("net.kyori:adventure-text-serializer-legacy:4.14.0")
     implementation("net.kyori:adventure-platform-bukkit:4.4.1")
     
-    implementation(kotlin("stdlib"))
-    implementation(kotlin("reflect"))
-    implementation("com.github.cryptomorin:XSeries:10.0.0")
+    compileOnly(kotlin("stdlib"))
+    compileOnly(kotlin("reflect"))
+    implementation("com.github.cryptomorin:XSeries:13.7.1")
     implementation("co.aikar:acf-paper:0.5.1-SNAPSHOT")
-    implementation("me.jordanfails:honey:1.0.0")
+    implementation("io.github.jordanfails:honey:1.1.1")
     compileOnly("com.sk89q.worldguard:worldguard-bukkit:7.0.5")
     compileOnly("com.sk89q.worldedit:worldedit-bukkit:7.2.0")
 //    compileOnly("com.mojang:authlib:3.18.38")
@@ -57,6 +57,15 @@ java {
     }
 }
 
+fun com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar.excludeKotlinRuntime() {
+    // Kotlin is provided at runtime by Paper's plugin library loader (see plugin.yml).
+    // Bundling it here causes LinkageErrors when other plugins call honey APIs across class loaders.
+    exclude("kotlin/**")
+    exclude("kotlinx/**")
+    exclude("META-INF/*.kotlin_module")
+    exclude("META-INF/kotlin/**")
+}
+
 tasks {
     // Legacy shadow jar (Java 8 - for 1.8 to 1.16 servers)
     val shadowJarLegacy by registering(com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar::class) {
@@ -64,6 +73,7 @@ tasks {
         configurations = listOf(project.configurations.runtimeClasspath.get())
         archiveBaseName.set("Unify")
         archiveClassifier.set("legacy")
+        excludeKotlinRuntime()
         
         // Ensure Java 8 bytecode
         manifest {
@@ -77,12 +87,14 @@ tasks {
         configurations = listOf(project.configurations.runtimeClasspath.get())
         archiveBaseName.set("Unify")
         archiveClassifier.set("modern")
+        excludeKotlinRuntime()
     }
     
     // Default shadowJar uses legacy for compatibility
     shadowJar {
         archiveBaseName.set("Unify")
         archiveClassifier.set("")
+        excludeKotlinRuntime()
     }
 
     build {

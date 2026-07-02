@@ -198,7 +198,7 @@ abstract class Button {
                 }
 
                 override fun getMaterial(player: Player): Material {
-                    return material.get()
+                    return material.get() ?: Material.BARREL
                 }
 
                 override fun getDamageValue(player: Player): Byte {

@@ -25,7 +25,7 @@ fun String.toTitleCase(): String {
 }
 
 fun XMaterial.get(): Material {
-    return this.parseMaterial()!!
+    return XSupport.resolve(this)
 }
 
 fun Location.toFastLocation(): FastLocation {

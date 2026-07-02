@@ -1,6 +1,6 @@
 plugins {
     // declare plugin ids using full form (not kotlin("..."))
-    id("org.jetbrains.kotlin.jvm") version "2.2.0" apply false
+    id("org.jetbrains.kotlin.jvm") version "2.2.21" apply false
     id("com.github.johnrengelman.shadow") version "8.1.1" apply false
     id("maven-publish")
 }

@@ -35,7 +35,7 @@ object CC {
     val STAR_FILLED = "★"
 
 
-    private val NMS_HANDLER: NMSHandler? = UnifyCore.instance.nms
+    private val NMS_HANDLER: NMSHandler? by lazy { UnifyCore.instance.nms }
 
     @JvmStatic
     val LONG_LINE = ChatColor.STRIKETHROUGH.toString() + org.apache.commons.lang3.StringUtils.repeat("-", 53)
@@ -418,7 +418,7 @@ object CC {
      * Builds a simple color gradient between two hex colors as a list of colorized strings.
      * Perfect for fancy title text or UI menus.
      */
-    fun gradient(fromHex: String, toHex: String, steps: Int, text: String): List<String> {
+    fun gradient(fromHex: String, toHex: String, text: String): List<String> {
         fun hexToRGB(hex: String): Triple<Int, Int, Int> {
             val clean = hex.removePrefix("#")
             val r = clean.substring(0, 2).toInt(16)
@@ -430,9 +430,9 @@ object CC {
         val (r1, g1, b1) = hexToRGB(fromHex)
         val (r2, g2, b2) = hexToRGB(toHex)
         val chars = text.toCharArray()
-        val stepR = (r2 - r1).toDouble() / (steps - 1)
-        val stepG = (g2 - g1).toDouble() / (steps - 1)
-        val stepB = (b2 - b1).toDouble() / (steps - 1)
+        val stepR = (r2 - r1).toDouble() / (text.length - 1)
+        val stepG = (g2 - g1).toDouble() / (text.length - 1)
+        val stepB = (b2 - b1).toDouble() / (text.length - 1)
 
         return chars.mapIndexed { i, c ->
             val r = (r1 + stepR * i).toInt()
@@ -441,6 +441,32 @@ object CC {
             translate(String.format("#%02X%02X%02X%s", r, g, b, c))
         }
     }
+//    fun String.gradient(fromHex: String, toHex: String): List<String> {
+//        fun String.toRgb(): Triple<Int, Int, Int> {
+//            val hex = removePrefix("#")
+//            return Triple(
+//                hex.substring(0, 2).toInt(16),
+//                hex.substring(2, 4).toInt(16),
+//                hex.substring(4, 6).toInt(16)
+//            )
+//        }
+//
+//        if (isEmpty()) return emptyList()
+//
+//        val (r1, g1, b1) = fromHex.toRgb()
+//        val (r2, g2, b2) = toHex.toRgb()
+//        val last = maxOf(length - 1, 1)
+//
+//        return mapIndexed { i, c ->
+//            val t = i.toDouble() / last
+//
+//            val r = (r1 + (r2 - r1) * t).toInt()
+//            val g = (g1 + (g2 - g1) * t).toInt()
+//            val b = (b1 + (b2 - b1) * t).toInt()
+//
+//            translate(String.format("#%02X%02X%02X%c", r, g, b, c))
+//        }
+//    }
 
 
     /**
@@ -465,7 +491,7 @@ object CC {
      */
     @JvmStatic
     fun formatTranslate(input: String, vararg arguments: Any?): String {
-        return translate(format(input, *arguments))
+        return translate(String.format(input, *arguments))
     }
 
     @JvmStatic

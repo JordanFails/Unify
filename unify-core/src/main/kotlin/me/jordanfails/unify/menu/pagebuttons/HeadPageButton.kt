@@ -63,7 +63,7 @@ class HeadPageButton(private val mod: Int, private val menu: PaginatedMenu) : Bu
     }
 
     override fun getMaterial(player: Player): Material {
-        return XMaterial.PLAYER_HEAD.get()
+        return XMaterial.PLAYER_HEAD.get() ?: Material.PLAYER_HEAD
     }
 
     fun getTexture(): String {

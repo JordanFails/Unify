@@ -6,6 +6,7 @@ import me.jordanfails.unify.menu.Button
 import me.jordanfails.unify.menu.Menu
 import me.jordanfails.unify.utils.CC
 import me.jordanfails.unify.utils.ItemBuilder
+import me.jordanfails.unify.utils.XSupport
 import me.jordanfails.unify.nms.LegacyColorDataType
 import me.jordanfails.unify.nms.LegacyItemColor
 import me.jordanfails.unify.nms.NMSHandlerFactory
@@ -95,7 +96,12 @@ class ConfirmMenu(
             override fun clicked(player: Player, slot: Int, clickType: ClickType, view: InventoryView) {
                 if (!called) {
                     called = true
-                    player.playSound(player.location, XSound.BLOCK_NOTE_BLOCK_BASEDRUM.parseSound()!!, 1f, 0.6f)
+                    player.playSound(
+                        player.location,
+                        XSupport.resolveSound(XSound.BLOCK_NOTE_BLOCK_BASEDRUM),
+                        1f,
+                        0.6f
+                    )
                     player.closeInventory()
                     callback(false)
                 }

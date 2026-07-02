@@ -85,7 +85,7 @@ object NMSHandlerFactory {
 
         val className = "me.jordanfails.unify.nms.$version.NMSHandler_${version}"
         return try {
-            val clazz = Class.forName(className)
+        val clazz = Class.forName(className, true, UnifyCore::class.java.classLoader)
             val instance = clazz.getDeclaredConstructor().newInstance() as NMSHandler
             nmsHandler = instance
             UnifyCore.instance.logger.info("&a&l[Unify] &aLoaded NMS handler for &f&n$version&a.")
