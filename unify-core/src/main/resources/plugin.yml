@@ -8,3 +8,6 @@ softdepend: [WorldGuard, NBTAPI]
 libraries:
   - org.jetbrains.kotlin:kotlin-stdlib:2.2.21
   - org.jetbrains.kotlin:kotlin-reflect:2.2.21
+libraries:
+  - org.jetbrains.kotlin:kotlin-stdlib:2.2.21
+  - org.jetbrains.kotlin:kotlin-reflect:2.2.21
