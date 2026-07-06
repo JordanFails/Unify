@@ -1,7 +1,7 @@
 plugins {
     // declare plugin ids using full form (not kotlin("..."))
     id("org.jetbrains.kotlin.jvm") version "2.2.21" apply false
-    id("com.github.johnrengelman.shadow") version "8.1.1" apply false
+    id("com.gradleup.shadow") version "9.4.3" apply false
     id("maven-publish")
 }
 
@@ -27,10 +27,11 @@ val nms_v1_9_R2 = file("unify-nms/unify-nms-v1_9_R2/build/libs/unify-nms-v1_9_R2
 val nms_v1_12_R1 = file("unify-nms/unify-nms-v1_12_R1/build/libs/unify-nms-v1_12_R1-1.0-SNAPSHOT.jar")
 val nms_v1_16_R3 = file("unify-nms/unify-nms-v1_16_R3/build/libs/unify-nms-v1_16_R3-1.0-SNAPSHOT.jar")
 
-// Modern JARs (Java 17+ compatible: 1.20, 1.21)
+// Modern JARs (Java 17+ compatible: 1.20, 1.21, 26)
 val modernCoreJar = file("unify-core/build/libs/Unify-1.0-SNAPSHOT-modern.jar")
 val nms_v1_20_R4 = file("unify-nms/unify-nms-v1_20_R4/build/libs/unify-nms-v1_20_R4-1.0-SNAPSHOT.jar")
 val nms_v1_21_R1 = file("unify-nms/unify-nms-v1_21_R1/build/libs/unify-nms-v1_21_R1-1.0-SNAPSHOT-dev.jar")
+val nms_v26_R1 = file("unify-nms/unify-nms-v26_R1/build/libs/unify-nms-v26_R1-1.0-SNAPSHOT.jar")
 
 // Task to build legacy modules (Java 8)
 tasks.register("buildLegacy") {
@@ -51,6 +52,7 @@ tasks.register("buildModern") {
     dependsOn(":unify-nms:unify-nms-v1_16_R3:jar")
     dependsOn(":unify-nms:unify-nms-v1_20_R4:jar")
     dependsOn(":unify-nms:unify-nms-v1_21_R1:jar")
+    dependsOn(":unify-nms:unify-nms-v26_R1:jar")
 }
 
 // Legacy bundled plugin (Java 8 - for 1.8 to 1.16 servers)
@@ -94,6 +96,7 @@ val bundledModernTask = tasks.register<Jar>("bundledModern") {
     from({ if (nms_v1_16_R3.exists()) zipTree(nms_v1_16_R3) else emptyList<Any>() })
     from({ if (nms_v1_20_R4.exists()) zipTree(nms_v1_20_R4) else emptyList<Any>() })
     from({ if (nms_v1_21_R1.exists()) zipTree(nms_v1_21_R1) else emptyList<Any>() })
+    from({ if (nms_v26_R1.exists()) zipTree(nms_v26_R1) else emptyList<Any>() })
 }
 
 // Publishing configuration

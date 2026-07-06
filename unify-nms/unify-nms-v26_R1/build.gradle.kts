@@ -20,15 +20,21 @@ repositories {
 dependencies {
     compileOnly(project(":unify-core"))
     compileOnly("de.tr7zw:item-nbt-api-plugin:2.15.5")
-    paperweight.paperDevBundle("1.21.1-R0.1-SNAPSHOT")
+    paperweight.paperDevBundle("26.2.build.48-alpha")
 }
 
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain(26)
 }
 java {
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(21))
+        languageVersion.set(JavaLanguageVersion.of(26))
+    }
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile>().configureEach {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_24)
     }
 }
 
