@@ -108,6 +108,8 @@ interface NMSHandler {
     /**
      * Sidebar row styling: [scoreboardEntry] is a stable internal fake name (never shown as the full line);
      * [prefix] + [suffix] are legacy §-coded fragments (already truncated to version limits by caller).
+     *
+     * @param create true = create team, false = update existing team (required on modern clients)
      */
     fun sendScoreboardSidebarTeamLine(
         player: Player,
@@ -115,6 +117,7 @@ interface NMSHandler {
         scoreboardEntry: String,
         prefix: String,
         suffix: String,
+        create: Boolean = true,
     )
     
     // --- BossBar API ---

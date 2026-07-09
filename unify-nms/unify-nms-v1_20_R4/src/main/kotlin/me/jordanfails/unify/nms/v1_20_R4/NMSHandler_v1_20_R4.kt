@@ -2,6 +2,7 @@ package me.jordanfails.unify.nms.v1_20_R4
 
 import com.mojang.authlib.GameProfile
 import com.mojang.authlib.properties.Property
+import io.papermc.paper.adventure.PaperAdventure
 import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.bossbar.BossBarColor
 import me.jordanfails.unify.bossbar.BossBarStyle
@@ -11,6 +12,8 @@ import me.jordanfails.unify.hologram.UnifyHologram
 import me.jordanfails.unify.nms.NMSHandler
 import me.jordanfails.unify.nms.ServerVersion
 import me.jordanfails.unify.npc.UnifyNPC
+import net.kyori.adventure.text.minimessage.MiniMessage
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
 import net.minecraft.ChatFormatting
 import net.minecraft.network.Connection
 import net.minecraft.network.chat.Component
@@ -33,6 +36,7 @@ import net.minecraft.world.item.component.ResolvableProfile
 import net.minecraft.world.scores.PlayerTeam
 import net.minecraft.world.scores.Scoreboard
 import net.minecraft.world.scores.Team
+import net.minecraft.world.scores.criteria.ObjectiveCriteria
 import org.bukkit.Bukkit
 import org.bukkit.Location
 import org.bukkit.block.BlockState
@@ -111,7 +115,7 @@ class NMSHandler_v1_20_R4 : NMSHandler {
                 !ownerName.isNullOrBlank() -> Bukkit.getOfflinePlayer(ownerName)
                 else -> return false
             }
-            meta.setOwningPlayer(owningPlayer)
+            meta.owningPlayer = owningPlayer
             item.itemMeta = meta
             true
         } catch (_: Throwable) {
@@ -194,7 +198,7 @@ class NMSHandler_v1_20_R4 : NMSHandler {
             npc.absMoveTo(location.x, location.y, location.z, location.yaw, location.pitch)
             attachFakeConnection(server, npc, profile)
             npc.noPhysics = true
-            npc.setNoGravity(true)
+            npc.isNoGravity = true
             npc.isInvulnerable = true
 
             world.addNewPlayer(npc)
@@ -235,7 +239,7 @@ class NMSHandler_v1_20_R4 : NMSHandler {
         return try {
             npc.absMoveTo(location.x, location.y, location.z, location.yaw, location.pitch)
             npc.noPhysics = true
-            npc.setNoGravity(true)
+            npc.isNoGravity = true
             true
         } catch (e: Exception) {
             e.printStackTrace()
@@ -281,7 +285,7 @@ class NMSHandler_v1_20_R4 : NMSHandler {
         }
     }
 
-    private fun sendHideNpcNametag(connection: net.minecraft.server.network.ServerGamePacketListenerImpl, npc: ServerPlayer) {
+    private fun sendHideNpcNametag(connection: ServerGamePacketListenerImpl, npc: ServerPlayer) {
         val teamName = "npc_nt_${npc.uuid.toString().take(8)}"
         val dummyScoreboard = Scoreboard()
         val team = PlayerTeam(dummyScoreboard, teamName)
@@ -410,10 +414,20 @@ class NMSHandler_v1_20_R4 : NMSHandler {
     
     private fun extractColorCode(text: String): Char {
         val colorChars = "0123456789abcdefABCDEF"
-        for (i in 0 until text.length - 1) {
-            if ((text[i] == '\u00A7' || text[i] == '&') && colorChars.contains(text[i + 1])) {
-                return text[i + 1].lowercaseChar()
+        var i = 0
+        while (i < text.length - 1) {
+            val marker = text[i]
+            if (marker == '\u00A7' || marker == '&') {
+                val code = text[i + 1]
+                if (code.equals('x', ignoreCase = true) && i + 13 < text.length) {
+                    i += 14
+                    continue
+                }
+                if (colorChars.contains(code)) {
+                    return code.lowercaseChar()
+                }
             }
+            i++
         }
         return 'f'
     }
@@ -448,26 +462,18 @@ class NMSHandler_v1_20_R4 : NMSHandler {
         try {
             val connection = (player as CraftPlayer).handle.connection
             
-            // Parse MiniMessage directly into Component (no legacy detour)
-            val adventureComponent = if (title.contains('<') && title.contains('>')) {
-                net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().deserialize(title)
-            } else {
-                net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
-                    .legacyAmpersand()
-                    .deserialize(title)
-            }
-            val nmsComponent = io.papermc.paper.adventure.PaperAdventure.asVanilla(adventureComponent)
+            val nmsComponent = parseText(title)
             
-            val dummyScoreboard = net.minecraft.world.scores.Scoreboard()
+            val dummyScoreboard = Scoreboard()
             val objective = dummyScoreboard.addObjective(
                 name,
-                net.minecraft.world.scores.criteria.ObjectiveCriteria.DUMMY,
+                ObjectiveCriteria.DUMMY,
                 nmsComponent,
-                net.minecraft.world.scores.criteria.ObjectiveCriteria.RenderType.INTEGER,
+                ObjectiveCriteria.RenderType.INTEGER,
                 true,
                 null
             )
-            
+
             val packet = net.minecraft.network.protocol.game.ClientboundSetObjectivePacket(objective, mode)
             connection.send(packet)
         } catch (e: Exception) {
@@ -484,13 +490,13 @@ class NMSHandler_v1_20_R4 : NMSHandler {
                 2 -> net.minecraft.world.scores.DisplaySlot.BELOW_NAME
                 else -> return
             }
-            
-            val dummyScoreboard = net.minecraft.world.scores.Scoreboard()
+
+            val dummyScoreboard = Scoreboard()
             val objective = dummyScoreboard.addObjective(
                 objectiveName,
-                net.minecraft.world.scores.criteria.ObjectiveCriteria.DUMMY,
-                net.minecraft.network.chat.Component.empty(),
-                net.minecraft.world.scores.criteria.ObjectiveCriteria.RenderType.INTEGER,
+                ObjectiveCriteria.DUMMY,
+                Component.empty(),
+                ObjectiveCriteria.RenderType.INTEGER,
                 true,
                 null
             )
@@ -533,18 +539,19 @@ class NMSHandler_v1_20_R4 : NMSHandler {
         scoreboardEntry: String,
         prefix: String,
         suffix: String,
+        create: Boolean,
     ) {
         try {
-            val scoreboard = net.minecraft.world.scores.Scoreboard()
+            val scoreboard = Scoreboard()
             val team = PlayerTeam(scoreboard, teamName)
-            team.displayName = net.minecraft.network.chat.Component.literal(teamName)
-            team.playerPrefix = net.minecraft.network.chat.Component.literal(prefix)
-            team.playerSuffix = net.minecraft.network.chat.Component.literal(suffix)
+            team.displayName = Component.literal(teamName)
+            team.playerPrefix = parseText(prefix)
+            team.playerSuffix = parseText(suffix)
             team.color = getChatFormatting(extractColorCode(prefix))
             team.nameTagVisibility = Team.Visibility.ALWAYS
             team.collisionRule = Team.CollisionRule.NEVER
             team.players.add(scoreboardEntry)
-            val packet = net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket.createAddOrModifyPacket(team, true)
+            val packet = ClientboundSetPlayerTeamPacket.createAddOrModifyPacket(team, create)
             (player as CraftPlayer).handle.connection.send(packet)
         } catch (e: Exception) {
             e.printStackTrace()
@@ -667,7 +674,7 @@ class NMSHandler_v1_20_R4 : NMSHandler {
                         val nmsItem = CraftItemStack.asNMSCopy(line.itemStack)
                         val itemEntity = ItemEntity(world, hologram.location.x, currentY, hologram.location.z, nmsItem)
                         itemEntity.id = entityId
-                        itemEntity.setNoGravity(true)
+                        itemEntity.isNoGravity = true
                         itemEntity.setNeverPickUp()
                         
                         val addPacket = ClientboundAddEntityPacket(itemEntity)
@@ -697,9 +704,7 @@ class NMSHandler_v1_20_R4 : NMSHandler {
             
             for (i in lines.indices) {
                 val entityId = entityIds[i]
-                val line = lines[i]
-                
-                when (line) {
+                when (val line = lines[i]) {
                     is HologramLine.Text -> {
                         val armorStand = ArmorStand(world, hologram.location.x, currentY, hologram.location.z)
                         armorStand.id = entityId
@@ -722,7 +727,7 @@ class NMSHandler_v1_20_R4 : NMSHandler {
                         val nmsItem = CraftItemStack.asNMSCopy(line.itemStack)
                         val itemEntity = ItemEntity(world, hologram.location.x, currentY, hologram.location.z, nmsItem)
                         itemEntity.id = entityId
-                        itemEntity.setNoGravity(true)
+                        itemEntity.isNoGravity = true
                         
                         val dataValues = itemEntity.entityData.packAll()
                         if (dataValues != null) {
@@ -743,10 +748,22 @@ class NMSHandler_v1_20_R4 : NMSHandler {
         }
     }
     
-    private fun parseText(text: String): net.minecraft.network.chat.Component {
-        val converted = convertLegacyToMiniMessage(text.replace('§', '&'))
-        val adventureComponent = net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().deserialize(converted)
-        return io.papermc.paper.adventure.PaperAdventure.asVanilla(adventureComponent)
+    private fun parseText(text: String): Component {
+        if (text.contains('<') && text.contains('>')) {
+            try {
+                val converted = convertLegacyToMiniMessage(text.replace('§', '&'))
+                val adventureComponent = MiniMessage.miniMessage().deserialize(converted)
+                return PaperAdventure.asVanilla(adventureComponent)
+            } catch (_: Exception) {
+            }
+        }
+        val adventure = LegacyComponentSerializer.builder()
+            .character('§')
+            .hexColors()
+            .useUnusualXRepeatedCharacterHexFormat()
+            .build()
+            .deserialize(text.replace('&', '§'))
+        return PaperAdventure.asVanilla(adventure)
     }
 
     private fun convertLegacyToMiniMessage(text: String): String {

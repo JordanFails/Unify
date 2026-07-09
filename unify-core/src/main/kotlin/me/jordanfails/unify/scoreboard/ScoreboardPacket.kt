@@ -3,6 +3,8 @@ package me.jordanfails.unify.scoreboard
 import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.utils.CC
 import org.bukkit.entity.Player
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Wrapper for sending scoreboard objective/score packets directly to players.
@@ -10,6 +12,9 @@ import org.bukkit.entity.Player
  *
  * Rows use **stable fake score entries** (color codes) plus **team prefix/suffix** for visible text,
  * so countdown and other changing lines update in place instead of stacking or requiring REMOVE packets.
+ *
+ * Modern clients (1.20.3+) reject CREATE for an objective/team that already exists, so the first
+ * send uses CREATE and later refreshes use UPDATE.
  */
 class ScoreboardPacket(
     val objectiveName: String,
@@ -20,9 +25,15 @@ class ScoreboardPacket(
 
     fun send(player: Player) {
         val nms = UnifyCore.instance.nms ?: return
+        val createObjective = !sidebarCreated.contains(player.uniqueId)
+        // Teams left behind after a shrink still exist on the client — never CREATE those again.
+        val teamsCreated = sidebarTeamsCreated[player.uniqueId] ?: 0
 
-        nms.sendScoreboardObjective(player, objectiveName, title, 0) // 0 = CREATE
-        nms.sendScoreboardDisplaySlot(player, objectiveName, 1) // 1 = SIDEBAR
+        // 0 = CREATE (first send only), 2 = UPDATE (title/content refresh)
+        nms.sendScoreboardObjective(player, objectiveName, title, if (createObjective) 0 else 2)
+        if (createObjective) {
+            nms.sendScoreboardDisplaySlot(player, objectiveName, 1) // 1 = SIDEBAR
+        }
 
         val prefixLimit = nms.getTeamPrefixLimit()
         val suffixLimit = nms.getTeamPrefixLimit()
@@ -32,6 +43,7 @@ class ScoreboardPacket(
             val stableEntry = stableSidebarEntry(rowIndex)
             val translatedLine = CC.translate(displayRaw)
             val (prefix, suffix) = splitSidebarPrefixSuffix(translatedLine, prefixLimit, suffixLimit)
+            val createTeam = rowIndex >= teamsCreated
 
             nms.sendScoreboardScore(player, objectiveName, stableEntry, scoreVal, 0) // CHANGE
             nms.sendScoreboardSidebarTeamLine(
@@ -40,6 +52,7 @@ class ScoreboardPacket(
                 stableEntry,
                 prefix,
                 suffix,
+                create = createTeam,
             )
         }
 
@@ -48,11 +61,16 @@ class ScoreboardPacket(
             val stableEntry = stableSidebarEntry(rowIndex)
             nms.sendScoreboardScore(player, objectiveName, stableEntry, 0, 1) // REMOVE
         }
+
+        sidebarCreated.add(player.uniqueId)
+        sidebarTeamsCreated[player.uniqueId] = maxOf(teamsCreated, rows.size)
     }
 
     fun remove(player: Player) {
         val nms = UnifyCore.instance.nms ?: return
         nms.sendScoreboardObjective(player, objectiveName, "", 1) // 1 = REMOVE
+        // Teams outlive the objective on the client — keep sidebarTeamsCreated so we UPDATE, not CREATE.
+        sidebarCreated.remove(player.uniqueId)
     }
 
     companion object {
@@ -61,6 +79,12 @@ class ScoreboardPacket(
 
         /** Must match [stableSidebarEntry] valid indices (sidebar allows 15 lines). */
         private const val MAX_SIDEBAR_ROWS = 15
+
+        /** Players who already have [SIDEBAR_OBJECTIVE] on the client. */
+        private val sidebarCreated = ConcurrentHashMap.newKeySet<UUID>()
+
+        /** Highest team index+1 created for a player (teams persist after row shrink). */
+        private val sidebarTeamsCreated = ConcurrentHashMap<UUID, Int>()
 
         private fun buildSidebarRows(info: ScoreboardInfo): List<Pair<String, Int>> {
             val displayLines = info.lines.take(15)
@@ -126,13 +150,30 @@ class ScoreboardPacket(
             return prefixUnits.joinToString("") to suffixUnits.joinToString("")
         }
 
-        /** Each element is one visible char or one legacy pair `§` + modifier (`§e`, `§r`, …). */
+        /** Each element is one visible char, one legacy pair `§` + modifier (`§e`, `§r`, …), or one §x hex color. */
         internal fun legacyColorUnits(line: String): List<String> {
             val out = ArrayList<String>()
             var i = 0
             while (i < line.length) {
                 val c = line[i]
                 if (c == '\u00A7' && i + 1 < line.length) {
+                    val code = line[i + 1]
+                    // §x§R§R§G§G§B§B — keep as one unit so splits never cut mid-hex
+                    if (code.equals('x', ignoreCase = true) && i + 13 < line.length) {
+                        var valid = true
+                        for (j in 0 until 6) {
+                            val ampIndex = i + 2 + (j * 2)
+                            if (line[ampIndex] != '\u00A7') {
+                                valid = false
+                                break
+                            }
+                        }
+                        if (valid) {
+                            out.add(line.substring(i, i + 14))
+                            i += 14
+                            continue
+                        }
+                    }
                     out.add(line.substring(i, i + 2))
                     i += 2
                 } else {
@@ -151,6 +192,14 @@ class ScoreboardPacket(
         fun removePacketSidebar(player: Player) {
             val nms = UnifyCore.instance.nms ?: return
             nms.sendScoreboardObjective(player, SIDEBAR_OBJECTIVE, "", 1) // REMOVE
+            // Teams outlive the objective on the client — keep sidebarTeamsCreated so we UPDATE, not CREATE.
+            sidebarCreated.remove(player.uniqueId)
+        }
+
+        /** Full cleanup on quit / disconnect. */
+        fun clearSidebarState(playerId: UUID) {
+            sidebarCreated.remove(playerId)
+            sidebarTeamsCreated.remove(playerId)
         }
     }
 }

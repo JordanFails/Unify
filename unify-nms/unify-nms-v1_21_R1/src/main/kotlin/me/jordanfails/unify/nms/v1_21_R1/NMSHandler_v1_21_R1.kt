@@ -638,10 +638,20 @@ class NMSHandler_v1_21_R1 : NMSHandler {
     
     private fun extractColorCode(text: String): Char {
         val colorChars = "0123456789abcdefABCDEF"
-        for (i in 0 until text.length - 1) {
-            if ((text[i] == '\u00A7' || text[i] == '&') && colorChars.contains(text[i + 1])) {
-                return text[i + 1].lowercaseChar()
+        var i = 0
+        while (i < text.length - 1) {
+            val marker = text[i]
+            if (marker == '\u00A7' || marker == '&') {
+                val code = text[i + 1]
+                if (code.equals('x', ignoreCase = true) && i + 13 < text.length) {
+                    i += 14
+                    continue
+                }
+                if (colorChars.contains(code)) {
+                    return code.lowercaseChar()
+                }
             }
+            i++
         }
         return 'f'
     }
@@ -918,16 +928,7 @@ class NMSHandler_v1_21_R1 : NMSHandler {
         try {
             val connection = (player as CraftPlayer).handle.connection
 
-            // Parse MiniMessage directly into Component (no legacy detour)
-            // This avoids bloated hex color codes from legacy conversion
-            val adventureComponent = if (title.contains('<') && title.contains('>')) {
-                MiniMessage.miniMessage().deserialize(title)
-            } else {
-                LegacyComponentSerializer
-                    .legacyAmpersand()
-                    .deserialize(title)
-            }
-            val nmsComponent = PaperAdventure.asVanilla(adventureComponent)
+            val nmsComponent = parseText(title)
             
             val packet = when (mode) {
                 0 -> ClientboundSetObjectivePacket(
@@ -1003,18 +1004,19 @@ class NMSHandler_v1_21_R1 : NMSHandler {
         scoreboardEntry: String,
         prefix: String,
         suffix: String,
+        create: Boolean,
     ) {
         try {
             val scoreboard = Scoreboard()
             val team = PlayerTeam(scoreboard, teamName)
             team.displayName = Component.literal(teamName)
-            team.playerPrefix = Component.literal(prefix)
-            team.playerSuffix = Component.literal(suffix)
+            team.playerPrefix = parseText(prefix)
+            team.playerSuffix = parseText(suffix)
             team.color = getChatFormatting(extractColorCode(prefix))
             team.nameTagVisibility = Team.Visibility.ALWAYS
             team.collisionRule = Team.CollisionRule.NEVER
             team.players.add(scoreboardEntry)
-            val packet = ClientboundSetPlayerTeamPacket.createAddOrModifyPacket(team, true)
+            val packet = ClientboundSetPlayerTeamPacket.createAddOrModifyPacket(team, create)
             (player as CraftPlayer).handle.connection.send(packet)
         } catch (e: Exception) {
             e.printStackTrace()
@@ -1034,9 +1036,20 @@ class NMSHandler_v1_21_R1 : NMSHandler {
     }
     
     private fun parseText(text: String): Component {
-        val converted = convertLegacyToMiniMessage(text.replace('§', '&'))
-        val adventureComponent = MiniMessage.miniMessage().deserialize(converted)
-        return PaperAdventure.asVanilla(adventureComponent)
+        if (text.contains('<') && text.contains('>')) {
+            try {
+                val converted = convertLegacyToMiniMessage(text.replace('§', '&'))
+                return PaperAdventure.asVanilla(MiniMessage.miniMessage().deserialize(converted))
+            } catch (_: Exception) {
+            }
+        }
+        val adventure = LegacyComponentSerializer.builder()
+            .character('§')
+            .hexColors()
+            .useUnusualXRepeatedCharacterHexFormat()
+            .build()
+            .deserialize(text.replace('&', '§'))
+        return PaperAdventure.asVanilla(adventure)
     }
 
     private fun convertLegacyToMiniMessage(text: String): String {

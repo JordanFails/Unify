@@ -368,7 +368,7 @@ class NMSHandler_v1_16_R3 : NMSHandler {
     override fun sendScoreboardObjective(player: Player, name: String, title: String, mode: Int) {
         try {
             val connection = (player as CraftPlayer).handle.playerConnection
-            val titleComponent = IChatBaseComponent.ChatSerializer.a("{\"text\":\"$title\"}")
+            val titleComponent = CraftChatMessage.fromStringOrNull(title) ?: ChatComponentText(title)
             val dummyScoreboard = Scoreboard()
             val objective = dummyScoreboard.registerObjective(
                 name,
@@ -415,6 +415,7 @@ class NMSHandler_v1_16_R3 : NMSHandler {
         scoreboardEntry: String,
         prefix: String,
         suffix: String,
+        create: Boolean,
     ) {
         try {
             val connection = (player as CraftPlayer).handle.playerConnection
@@ -422,8 +423,8 @@ class NMSHandler_v1_16_R3 : NMSHandler {
             val safeName = teamName.take(16)
             setField(packet, "a", safeName)
             setField(packet, "b", ChatComponentText(safeName))
-            setField(packet, "c", ChatComponentText(prefix))
-            setField(packet, "d", ChatComponentText(suffix))
+            setField(packet, "c", CraftChatMessage.fromStringOrNull(prefix) ?: ChatComponentText(prefix))
+            setField(packet, "d", CraftChatMessage.fromStringOrNull(suffix) ?: ChatComponentText(suffix))
             setField(packet, "e", "always")
             setField(packet, "f", "always")
             setField(packet, "g", 15)
@@ -431,7 +432,7 @@ class NMSHandler_v1_16_R3 : NMSHandler {
             val players = getField(packet, "h") as MutableCollection<String>
             players.clear()
             players.add(scoreboardEntry)
-            setField(packet, "i", 0)
+            setField(packet, "i", if (create) 0 else 2)
             setField(packet, "j", 0)
             connection.sendPacket(packet)
         } catch (e: Exception) {

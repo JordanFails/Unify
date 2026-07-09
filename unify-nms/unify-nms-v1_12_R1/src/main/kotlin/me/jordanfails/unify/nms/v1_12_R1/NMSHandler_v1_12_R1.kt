@@ -409,6 +409,7 @@ class NMSHandler_v1_12_R1 : NMSHandler {
         scoreboardEntry: String,
         prefix: String,
         suffix: String,
+        create: Boolean,
     ) {
         try {
             val connection = (player as CraftPlayer).handle.playerConnection
@@ -424,7 +425,7 @@ class NMSHandler_v1_12_R1 : NMSHandler {
             val players = getField(packet, "g") as MutableCollection<String>
             players.clear()
             players.add(scoreboardEntry)
-            setField(packet, "h", 0)
+            setField(packet, "h", if (create) 0 else 2)
             setField(packet, "i", 0)
             connection.sendPacket(packet)
         } catch (e: Exception) {

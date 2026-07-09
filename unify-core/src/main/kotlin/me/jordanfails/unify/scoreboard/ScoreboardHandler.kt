@@ -111,6 +111,7 @@ object ScoreboardHandler {
 
     fun removePlayer(player: Player) {
         playerBoards.remove(player.uniqueId)
+        ScoreboardPacket.clearSidebarState(player.uniqueId)
     }
 
     fun isEnabled(): Boolean {
