@@ -28,7 +28,7 @@ object PlayerUtils {
     fun messageStaff(message: String) {
         val colored = CC.translate(message)
         Bukkit.getOnlinePlayers()
-            .filter { it.hasPermission("minearcade.staff") }
+            .filter { it.hasPermission("unify.staff") }
             .forEach { it.sendMessage(colored) }
     }
 

@@ -40,9 +40,6 @@ desktop.ini
 *.class
 *.log
 
-# Keep wrapper jar but ignore other jars
-!gradle/wrapper/gradle-wrapper.jar
-
 # Generated test reports, coverage
 reports/
 test-results/

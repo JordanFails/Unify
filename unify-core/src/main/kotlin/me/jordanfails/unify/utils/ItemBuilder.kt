@@ -1,12 +1,14 @@
 package me.jordanfails.unify.utils
 
 import com.cryptomorin.xseries.XMaterial
+import me.jordanfails.unify.menu.Button
 import me.jordanfails.unify.nms.NMSHandlerFactory
 import org.bukkit.Bukkit
 import org.bukkit.ChatColor
 import org.bukkit.Color
 import org.bukkit.Material
 import org.bukkit.enchantments.Enchantment
+import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemFlag
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.meta.LeatherArmorMeta
@@ -127,6 +129,12 @@ class ItemBuilder(private val item: ItemStack) {
     fun clone(): ItemBuilder = ItemBuilder(item.clone())
 
     fun build(): ItemStack = item.clone()
+
+    fun toButton(): Button = object : Button() {
+        override fun getButtonItem(player: Player): ItemStack {
+            return item.clone()
+        }
+    }
 
     companion object {
         @JvmStatic fun of(material: Material) = ItemBuilder(material)
