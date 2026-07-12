@@ -10,6 +10,7 @@ import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
 import org.apache.commons.lang.StringEscapeUtils
 import org.apache.commons.lang.StringUtils
 import org.bukkit.ChatColor
+import java.text.MessageFormat
 import java.util.regex.Pattern
 
 object CC {
@@ -491,7 +492,7 @@ object CC {
      */
     @JvmStatic
     fun formatTranslate(input: String, vararg arguments: Any?): String {
-        return translate(String.format(input, *arguments))
+        return translate(MessageFormat.format(input, *arguments))
     }
 
     @JvmStatic

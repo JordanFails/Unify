@@ -18,6 +18,7 @@ import me.jordanfails.unify.nametag.NametagHandler
 import me.jordanfails.unify.nms.ServerVersion
 import me.jordanfails.unify.npc.NPCManager
 import me.jordanfails.unify.scoreboard.ScoreboardHandler
+import me.jordanfails.unify.scoreboard.menu.ScoreboardsMenu
 import me.jordanfails.unify.tab.TabHandler
 import me.jordanfails.unify.utils.CC
 import me.jordanfails.unify.visibility.VanishHandler
@@ -140,5 +141,11 @@ class UnifyAdminCommand : BaseCommand() {
                 sender.sendMessage(CC.translate("&8- $line"))
             }
         }
+    }
+
+    @Subcommand("scoreboards")
+    @CommandPermission("unify.command.scoreboards")
+    fun scoreboard(player: Player) {
+        ScoreboardsMenu().open(player)
     }
 }

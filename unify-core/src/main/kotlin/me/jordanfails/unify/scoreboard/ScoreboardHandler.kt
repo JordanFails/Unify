@@ -121,4 +121,8 @@ object ScoreboardHandler {
     fun providerCount(): Int {
         return providers.size
     }
+
+    fun providers(): List<ScoreboardProvider> {
+        return providers
+    }
 }

@@ -11,11 +11,14 @@ import org.bukkit.enchantments.Enchantment
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemFlag
 import org.bukkit.inventory.ItemStack
+import org.bukkit.event.inventory.ClickType
+import org.bukkit.inventory.InventoryView
 import org.bukkit.inventory.meta.LeatherArmorMeta
 
 class ItemBuilder(private val item: ItemStack) {
 
     private val nms = NMSHandlerFactory.getHandler()
+    private var clickConsumer: ((Player, Int, ClickType, InventoryView) -> Unit)? = null
 
     constructor(material: Material) : this(ItemStack(material))
     constructor(material: Material, amount: Int) : this(ItemStack(material, amount))
@@ -126,6 +129,10 @@ class ItemBuilder(private val item: ItemStack) {
         if (resolved.durability != 0.toShort()) data(resolved.data!!.data.toShort())
     }
 
+    fun clickEvent(consumer: (Player, Int, ClickType, InventoryView) -> Unit) = apply {
+        this.clickConsumer = consumer
+    }
+
     fun clone(): ItemBuilder = ItemBuilder(item.clone())
 
     fun build(): ItemStack = item.clone()
@@ -133,6 +140,10 @@ class ItemBuilder(private val item: ItemStack) {
     fun toButton(): Button = object : Button() {
         override fun getButtonItem(player: Player): ItemStack {
             return item.clone()
+        }
+
+        override fun clicked(player: Player, slot: Int, clickType: ClickType, view: InventoryView) {
+            clickConsumer?.invoke(player, slot, clickType, view)
         }
     }
 
