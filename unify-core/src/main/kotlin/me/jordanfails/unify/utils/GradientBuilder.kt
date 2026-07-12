@@ -4,10 +4,6 @@ import java.awt.Color
 import kotlin.math.roundToInt
 import kotlin.text.iterator
 
-/**
- * Reimplementation of AtlantisMC's GradientBuilder.
- * Builds a Minecraft §x hex gradient string from a Gradient definition.
- */
 class GradientBuilder(
     private val from: Color,
     private val to: Color,
@@ -16,10 +12,8 @@ class GradientBuilder(
     private val italic: Boolean = false
 ) {
 
-    // Overloaded constructor like in the original stub
     constructor(from: Color, to: Color, content: String) : this(from, to, content, true, false)
 
-    // The original class had a private "gradient" field of type net.atlantismc.bukkit.color.Gradient
     private val gradient = Gradient(from, to, content, bold, italic)
 
     fun build(): String {

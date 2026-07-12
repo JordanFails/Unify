@@ -260,6 +260,15 @@ abstract class Menu {
         player.updateInventory()
     }
 
+    /**
+     * Calculates the inventory size from the highest button slot.
+     *
+     * **For bordered menus** ([BorderedMenu], [PaginatedBorderedMenu]) do
+     * NOT override this to control the menu size — override [getMinSize] or
+     * [BorderedMenu.getMenuSize]/[PaginatedBorderedMenu.getMenuSize] instead.
+     * The border calculation reads those methods directly and is unaffected
+     * by this one.
+     */
     open fun size(buttons: Map<Int, Button>): Int {
         var highest = 0
         for (buttonValue in buttons.keys) {
@@ -270,6 +279,13 @@ abstract class Menu {
         return (ceil((highest + 1) / 9.0) * 9.0).toInt()
     }
 
+    /**
+     * Minimum inventory size. Return -1 for no minimum.
+     *
+     * Override this (not [size]) to enforce a minimum menu size in bordered
+     * menus — [BorderedMenu.getMenuSize] and [PaginatedBorderedMenu.getMenuSize]
+     * both consult this method.
+     */
     open fun getMinSize(): Int {
         return -1
     }

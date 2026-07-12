@@ -20,6 +20,29 @@ import kotlin.math.ceil
  *
  * Automatically fills border slots with placeholder buttons
  * and provides paginated content in the inner area.
+ *
+ * ### ⚠️ Controlling the menu size
+ *
+ * Override **[getMenuSize]** (or [getMinSize]) to set a specific inventory
+ * size — **do NOT override [size][me.jordanfails.unify.menu.Menu.size]**.
+ *
+ * The border calculation in [computeBorderSlots][PaginatedBorderedMenu.computeBorderSlots]
+ * reads [getMenuSize] directly. Overriding [size][me.jordanfails.unify.menu.Menu.size]
+ * alone will **not** affect which slots are considered border. If the value
+ * returned by [getMenuSize] yields only 1-2 rows, every slot becomes a border
+ * slot and the entire menu fills with panes.
+ *
+ * Correct:
+ * ```
+ * override fun getMinSize(): Int = 27    // 3 rows
+ * // or
+ * override fun getMenuSize(): Int = 36   // 4 rows
+ * ```
+ *
+ * Wrong (has no effect on the border):
+ * ```
+ * override fun size(buttons: Map<Int, Button>): Int = 9 * 3
+ * ```
  */
 abstract class PaginatedBorderedMenu : PaginatedMenu() {
 
@@ -31,7 +54,13 @@ abstract class PaginatedBorderedMenu : PaginatedMenu() {
 
     /**
      * The total menu size. Override this if you want a specific size,
-     * otherwise uses getMinSize() or defaults to 27 (3 rows).
+     * otherwise uses [getMinSize] or defaults to 27 (3 rows).
+     *
+     * This is the method [computeBorderSlots][PaginatedBorderedMenu.computeBorderSlots]
+     * reads to determine edge slots. Prefer this over overriding
+     * [size][me.jordanfails.unify.menu.Menu.size].
+     *
+     * @see PaginatedBorderedMenu class-level docs for the full explanation.
      */
     open fun getMenuSize(): Int {
         val minSize = getMinSize()
@@ -189,7 +218,14 @@ abstract class PaginatedBorderedMenu : PaginatedMenu() {
         for (slot in 0 until totalSlots) {
             val row = slot / 9
             val col = slot % 9
-            if (row == 0 || row == rows - 1 || col == 0 || col == 8) {
+
+            val isFirstOrLastRow = if (rows > 1) {
+                row == 0 || row == rows - 1
+            } else {
+                false
+            }
+
+            if (isFirstOrLastRow || col == 0 || col == 8) {
                 borderSlots += slot
             }
         }

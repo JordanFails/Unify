@@ -18,8 +18,6 @@ import org.bukkit.inventory.meta.LeatherArmorMeta
 class ItemBuilder(private val item: ItemStack) {
 
     private val nms = NMSHandlerFactory.getHandler()
-    private var clickConsumer: ((Player, Int, ClickType, InventoryView) -> Unit)? = null
-
     constructor(material: Material) : this(ItemStack(material))
     constructor(material: Material, amount: Int) : this(ItemStack(material, amount))
     constructor(xMaterial: XMaterial) : this(XSupport.resolve(xMaterial))
@@ -129,21 +127,19 @@ class ItemBuilder(private val item: ItemStack) {
         if (resolved.durability != 0.toShort()) data(resolved.data!!.data.toShort())
     }
 
-    fun clickEvent(consumer: (Player, Int, ClickType, InventoryView) -> Unit) = apply {
-        this.clickConsumer = consumer
-    }
-
     fun clone(): ItemBuilder = ItemBuilder(item.clone())
 
     fun build(): ItemStack = item.clone()
 
-    fun toButton(): Button = object : Button() {
+    fun toButton(
+        clickHandler: (Player, Int, ClickType, InventoryView) -> Unit = { _, _, _, _ -> }
+    ): Button = object : Button() {
         override fun getButtonItem(player: Player): ItemStack {
             return item.clone()
         }
 
         override fun clicked(player: Player, slot: Int, clickType: ClickType, view: InventoryView) {
-            clickConsumer?.invoke(player, slot, clickType, view)
+            clickHandler(player, slot, clickType, view)
         }
     }
 
@@ -161,6 +157,14 @@ class ItemBuilder(private val item: ItemStack) {
                 .lore(*lore)
                 .glow()
                 .hideAllFlags()
+        }
+        @JvmStatic
+        fun fromItem(item: ItemStack): Button {
+            return object : Button() {
+                override fun getButtonItem(player: Player): ItemStack {
+                    return item
+                }
+            }
         }
     }
 }
