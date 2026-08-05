@@ -9,17 +9,22 @@ import me.jordanfails.unify.bossbar.BossBarStyle
 import me.jordanfails.unify.bossbar.UnifyBossBar
 import me.jordanfails.unify.hologram.HologramLine
 import me.jordanfails.unify.hologram.UnifyHologram
+import me.jordanfails.unify.menu.anvil.AnvilHandle
 import me.jordanfails.unify.nms.NMSHandler
 import me.jordanfails.unify.nms.ServerVersion
 import me.jordanfails.unify.npc.UnifyNPC
 import net.kyori.adventure.text.minimessage.MiniMessage
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
 import net.minecraft.ChatFormatting
+import net.minecraft.core.BlockPos
+import net.minecraft.core.component.DataComponents
 import net.minecraft.network.Connection
 import net.minecraft.network.chat.Component
 import net.minecraft.network.protocol.Packet
 import net.minecraft.network.protocol.PacketFlow
 import net.minecraft.network.protocol.game.ClientboundAddEntityPacket
+import net.minecraft.network.protocol.game.ClientboundContainerClosePacket
+import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket
 import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket
@@ -32,6 +37,9 @@ import net.minecraft.server.network.ServerGamePacketListenerImpl
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.decoration.ArmorStand
 import net.minecraft.world.entity.item.ItemEntity
+import net.minecraft.world.inventory.AnvilMenu
+import net.minecraft.world.inventory.ContainerLevelAccess
+import net.minecraft.world.inventory.MenuType
 import net.minecraft.world.item.component.ResolvableProfile
 import net.minecraft.world.scores.PlayerTeam
 import net.minecraft.world.scores.Scoreboard
@@ -46,6 +54,7 @@ import org.bukkit.boss.BossBar
 import org.bukkit.craftbukkit.CraftServer
 import org.bukkit.craftbukkit.CraftWorld
 import org.bukkit.craftbukkit.entity.CraftPlayer
+import org.bukkit.craftbukkit.event.CraftEventFactory
 import org.bukkit.craftbukkit.inventory.CraftItemStack
 import org.bukkit.entity.Player
 import org.bukkit.inventory.Inventory
@@ -181,6 +190,127 @@ class NMSHandler_v1_20_R4 : NMSHandler {
     override fun isCustomInventory(inventory: Inventory): Boolean {
         val holder = inventory.holder
         return holder == null || holder is Player || holder !is BlockState
+    }
+
+    override fun openAnvil(player: Player, title: String): AnvilHandle {
+        val serverPlayer = (player as CraftPlayer).handle
+        handleInventoryClose(serverPlayer)
+
+        val containerId = serverPlayer.nextContainerCounter()
+        val titleComponent = Component.literal(title)
+        val container = AnvilContainerHandle(player, containerId, titleComponent)
+
+        serverPlayer.connection.send(
+            ClientboundOpenScreenPacket(containerId, MenuType.ANVIL, titleComponent)
+        )
+        serverPlayer.containerMenu = container
+        serverPlayer.initMenu(container)
+        return container
+    }
+
+    override fun supportsAnvilTitle(): Boolean = true
+
+    private fun handleInventoryClose(serverPlayer: ServerPlayer) {
+        fireInventoryCloseEvent(serverPlayer)
+        serverPlayer.doCloseContainer()
+    }
+
+    companion object {
+        fun fireInventoryCloseEvent(serverPlayer: ServerPlayer) {
+            try {
+                val reasonClass = Class.forName("org.bukkit.event.inventory.InventoryCloseEvent\$Reason")
+                val method = CraftEventFactory::class.java.getMethod(
+                    "handleInventoryCloseEvent",
+                    net.minecraft.world.entity.player.Player::class.java,
+                    reasonClass,
+                )
+                method.invoke(null, serverPlayer, reasonClass.getField("UNKNOWN").get(null))
+                return
+            } catch (_: ReflectiveOperationException) {
+            } catch (_: NoSuchMethodError) {
+            }
+            try {
+                val method = CraftEventFactory::class.java.getMethod(
+                    "handleInventoryCloseEvent",
+                    net.minecraft.world.entity.player.Player::class.java,
+                )
+                method.invoke(null, serverPlayer)
+            } catch (_: ReflectiveOperationException) {
+            }
+        }
+    }
+
+    private class AnvilContainerHandle(
+        private val bukkitPlayer: Player,
+        private val windowId: Int,
+        guiTitle: Component,
+    ) : AnvilMenu(
+        windowId,
+        (bukkitPlayer as CraftPlayer).handle.inventory,
+        ContainerLevelAccess.create(
+            (bukkitPlayer.world as CraftWorld).handle,
+            BlockPos(0, 0, 0),
+        ),
+    ), AnvilHandle {
+
+        init {
+            this.checkReachable = false
+            setTitle(guiTitle)
+        }
+
+        override val inventory: Inventory
+            get() = bukkitView.topInventory
+
+        override val containerId: Int
+            get() = windowId
+
+        override fun createResult() {
+            val output = getSlot(2)
+            if (!output.hasItem()) {
+                output.set(getSlot(0).item.copy())
+            }
+            cost.set(0)
+            sendAllDataToRemote()
+            broadcastChanges()
+        }
+
+        override fun removed(player: net.minecraft.world.entity.player.Player) {
+        }
+
+        override fun clearContainer(player: net.minecraft.world.entity.player.Player, container: net.minecraft.world.Container) {
+        }
+
+        override fun getRenameText(): String = itemName ?: ""
+
+        override fun setRenameText(text: String) {
+            val inputLeft = getSlot(0)
+            if (inputLeft.hasItem()) {
+                inputLeft.item.set(DataComponents.CUSTOM_NAME, Component.literal(text))
+            }
+        }
+
+        override fun close(sendClosePacket: Boolean) {
+            val serverPlayer = (bukkitPlayer as CraftPlayer).handle
+            if (sendClosePacket) {
+                fireInventoryCloseEvent(serverPlayer)
+                serverPlayer.doCloseContainer()
+                serverPlayer.containerMenu = serverPlayer.inventoryMenu
+                serverPlayer.connection.send(ClientboundContainerClosePacket(windowId))
+            } else if (serverPlayer.containerMenu === this) {
+                serverPlayer.containerMenu = serverPlayer.inventoryMenu
+            }
+        }
+
+        override fun updateTitle(title: String, preserveRenameText: Boolean) {
+            val rename = getRenameText()
+            val component = Component.literal(title)
+            (bukkitPlayer as CraftPlayer).handle.connection.send(
+                ClientboundOpenScreenPacket(windowId, MenuType.ANVIL, component)
+            )
+            if (preserveRenameText) {
+                setRenameText(rename)
+            }
+        }
     }
 
     override fun spawnPlayerNpc(id: String, location: Location, skinType: UnifyNPC.SkinType?, skinValue: String?): UUID? {

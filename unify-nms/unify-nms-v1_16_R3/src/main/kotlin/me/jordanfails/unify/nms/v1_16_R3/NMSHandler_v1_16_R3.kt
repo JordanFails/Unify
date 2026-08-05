@@ -7,6 +7,7 @@ import me.jordanfails.unify.bossbar.BossBarStyle
 import me.jordanfails.unify.bossbar.UnifyBossBar
 import me.jordanfails.unify.hologram.HologramLine
 import me.jordanfails.unify.hologram.UnifyHologram
+import me.jordanfails.unify.menu.anvil.AnvilHandle
 import me.jordanfails.unify.nms.NMSHandler
 import me.jordanfails.unify.nms.ServerVersion
 import me.jordanfails.unify.npc.UnifyNPC
@@ -20,6 +21,7 @@ import org.bukkit.boss.BarStyle
 import org.bukkit.boss.BossBar
 import org.bukkit.craftbukkit.v1_16_R3.CraftWorld
 import org.bukkit.craftbukkit.v1_16_R3.entity.CraftPlayer
+import org.bukkit.craftbukkit.v1_16_R3.event.CraftEventFactory
 import org.bukkit.craftbukkit.v1_16_R3.inventory.CraftItemStack
 import org.bukkit.craftbukkit.v1_16_R3.util.CraftChatMessage
 import org.bukkit.entity.Player
@@ -131,6 +133,104 @@ class NMSHandler_v1_16_R3 : NMSHandler {
     override fun isCustomInventory(inventory: Inventory): Boolean {
         val holder = inventory.holder
         return holder == null || holder is Player || holder !is BlockState
+    }
+
+    override fun openAnvil(player: Player, title: String): AnvilHandle {
+        val entityPlayer = (player as CraftPlayer).handle
+        CraftEventFactory.handleInventoryCloseEvent(entityPlayer)
+        entityPlayer.o() // doCloseContainer
+
+        val titleComponent = ChatComponentText(title) as IChatBaseComponent
+        val container = AnvilContainerHandle(player, titleComponent)
+        val id = container.containerId
+
+        entityPlayer.playerConnection.sendPacket(
+            PacketPlayOutOpenWindow(id, Containers.ANVIL, titleComponent)
+        )
+        entityPlayer.activeContainer = container
+        container.addSlotListener(entityPlayer)
+        return container
+    }
+
+    override fun supportsAnvilTitle(): Boolean = true
+
+    private class AnvilContainerHandle(
+        private val bukkitPlayer: Player,
+        guiTitle: IChatBaseComponent,
+    ) : ContainerAnvil(
+        (bukkitPlayer as CraftPlayer).handle.nextContainerCounter(),
+        (bukkitPlayer as CraftPlayer).handle.inventory,
+        ContainerAccess.at(
+            (bukkitPlayer.world as CraftWorld).handle,
+            BlockPosition(0, 0, 0),
+        ),
+    ), AnvilHandle {
+
+        init {
+            checkReachable = false
+            setTitle(guiTitle)
+        }
+
+        override val inventory: Inventory
+            get() = bukkitView.topInventory
+
+        override val containerId: Int
+            get() = windowId
+
+        override fun e() {
+            val output = getSlot(2)
+            if (!output.hasItem()) {
+                val input = getSlot(0)
+                if (input.hasItem()) {
+                    val stack = input.item
+                    if (stack != null) {
+                        output.set(stack.cloneItemStack())
+                    }
+                }
+            }
+            levelCost.set(0)
+            c()
+        }
+
+        override fun b(entityhuman: EntityHuman) {
+            // no drop on remove
+        }
+
+        override fun a(entityhuman: EntityHuman, world: World, iinventory: IInventory) {
+            // no clear
+        }
+
+        override fun getRenameText(): String = renameText ?: ""
+
+        override fun setRenameText(text: String) {
+            val inputLeft = getSlot(0)
+            if (inputLeft.hasItem()) {
+                inputLeft.item.a(ChatComponentText(text))
+            }
+        }
+
+        override fun close(sendClosePacket: Boolean) {
+            val entityPlayer = (bukkitPlayer as CraftPlayer).handle
+            if (sendClosePacket) {
+                CraftEventFactory.handleInventoryCloseEvent(entityPlayer)
+                entityPlayer.o()
+                entityPlayer.activeContainer = entityPlayer.defaultContainer
+                entityPlayer.playerConnection.sendPacket(PacketPlayOutCloseWindow(windowId))
+            } else if (entityPlayer.activeContainer === this) {
+                entityPlayer.activeContainer = entityPlayer.defaultContainer
+            }
+        }
+
+        override fun updateTitle(title: String, preserveRenameText: Boolean) {
+            val rename = getRenameText()
+            val component = ChatComponentText(title) as IChatBaseComponent
+            (bukkitPlayer as CraftPlayer).handle.playerConnection.sendPacket(
+                PacketPlayOutOpenWindow(windowId, Containers.ANVIL, component)
+            )
+            if (preserveRenameText) {
+                setRenameText(rename)
+            }
+        }
     }
 
     override fun spawnPlayerNpc(id: String, location: Location, skinType: UnifyNPC.SkinType?, skinValue: String?): UUID? {

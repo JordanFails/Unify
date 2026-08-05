@@ -1,6 +1,7 @@
 package me.jordanfails.unify
 
 import me.jordanfails.unify.utils.Tasks
+import me.jordanfails.unify.menu.anvil.AnvilListener
 import me.jordanfails.unify.menu.listener.ButtonListeners
 import me.jordanfails.unify.menu.menus.listener.SelectItemListeners
 import me.jordanfails.unify.nametag.NametagHandler
@@ -70,19 +71,20 @@ class UnifyCore : JavaPlugin() {
     }
 
     fun setupMenu() {
-        Tasks.runTimerAsync(this, 2L, {
+        Tasks.runTimerAsync(this, 2L) {
             MenuAutoUpdater.run()
-        })
+        }
         listOf(
             SelectItemListeners,
-            ButtonListeners
+            ButtonListeners,
+            AnvilListener,
         ).forEach { listener -> this.server.pluginManager.registerEvents(listener, this) }
     }
 
     private fun setupCommands() {
         listOf(
             HologramCommand(),
-            NPCCommand(),
+//            NPCCommand(),
             PingCommand(),
             UnifyAdminCommand(),
         ).forEach { commandManager.registerCommand(it) }

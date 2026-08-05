@@ -94,11 +94,7 @@ class UnifyNPC internal constructor(
         skinType = type
         skinValue = cleanedValue
         if (nmsPlayerNpc) {
-            val location = spawnLocation.clone()
-            val nms = NMSHandlerFactory.getHandler()
-            val oldUuid = entityUuid
-            if (oldUuid != null) nms?.despawnPlayerNpc(oldUuid)
-            entityUuid = nms?.spawnPlayerNpc(id, location, skinType, skinValue)
+            respawnNmsEntity()
         } else {
             applySkin(getEntity())
         }
@@ -108,14 +104,69 @@ class UnifyNPC internal constructor(
         skinType = null
         skinValue = null
         if (nmsPlayerNpc) {
-            val location = spawnLocation.clone()
-            val nms = NMSHandlerFactory.getHandler()
-            val oldUuid = entityUuid
-            if (oldUuid != null) nms?.despawnPlayerNpc(oldUuid)
-            entityUuid = nms?.spawnPlayerNpc(id, location, null, null)
+            respawnNmsEntity()
         } else {
             applySkin(getEntity())
         }
+    }
+
+    /**
+     * Despawn + re-spawn the NMS player body (e.g. after a skin change) and re-show it to
+     * every online player in the same world. Callers must update entity lookups themselves
+     * when going through [NPCManager].
+     */
+    private fun respawnNmsEntity() {
+        val location = spawnLocation.clone()
+        val nms = NMSHandlerFactory.getHandler()
+        val oldUuid = entityUuid
+        if (oldUuid != null) nms?.despawnPlayerNpc(oldUuid)
+
+        val newUuid = nms?.spawnPlayerNpc(id, location, skinType, skinValue)
+        entityUuid = newUuid
+        if (newUuid == null) {
+            nmsPlayerNpc = false
+            return
+        }
+        nmsPlayerNpc = true
+
+        // spawnPlayerNpc already sends packets, but re-run addViewer so holograms and any
+        // post-spawn bookkeeping stay in sync for players already in range.
+        Bukkit.getOnlinePlayers().forEach { viewer ->
+            if (viewer.world == location.world) {
+                addViewer(viewer)
+            }
+        }
+    }
+
+    /** True when the backing entity still exists in a loaded world (false after chunk unload). */
+    fun isSpawned(): Boolean {
+        val uuid = entityUuid ?: return false
+        return Bukkit.getEntity(uuid) != null
+    }
+
+    /** Re-send spawn packets / hologram lines to [player] if they can see this NPC. */
+    fun refreshViewer(player: Player) {
+        addViewer(player)
+    }
+
+    /** Re-send spawn packets to every online player in this NPC's world. */
+    fun refreshAllViewers() {
+        val world = spawnLocation.world ?: return
+        Bukkit.getOnlinePlayers().forEach { viewer ->
+            if (viewer.world == world) addViewer(viewer)
+        }
+    }
+
+    /**
+     * If the entity was discarded (chunk unload, failed skin, etc.), spawn it again.
+     * @return true when an entity is present afterwards
+     */
+    fun ensureSpawned(plugin: UnifyCore): Boolean {
+        if (isSpawned()) {
+            refreshAllViewers()
+            return true
+        }
+        return spawn(plugin) != null
     }
 
     fun setHologramLines(lines: List<String>) {
@@ -177,7 +228,12 @@ class UnifyNPC internal constructor(
         }
 
         val lineObjects = hologramLines.map { HologramLine.Text(it) }
-        val hologramLocation = spawnLocation.clone().add(0.0, HOLOGRAM_HEIGHT, 0.0)
+        // Lines stack downwards from the anchor, so the anchor has to rise with the line
+        // count to keep the *bottom* line sitting just above the NPC's head. Anchoring the
+        // top line at a fixed height instead made every line past the second overlap the
+        // NPC, which is very visible on tall holograms such as leaderboards.
+        val stackHeight = (lineObjects.size - 1).coerceAtLeast(0) * LINE_SPACING
+        val hologramLocation = spawnLocation.clone().add(0.0, HOLOGRAM_HEIGHT + stackHeight, 0.0)
 
         val npcHologram = hologram
         if (npcHologram == null) {
@@ -191,7 +247,10 @@ class UnifyNPC internal constructor(
             return
         }
 
-        npcHologram.teleport(hologramLocation)
+        // teleport() persists the hologram file; only pay that when the anchor really moved.
+        if (npcHologram.location != hologramLocation) {
+            npcHologram.teleport(hologramLocation)
+        }
         npcHologram.lines = lineObjects
         Bukkit.getOnlinePlayers().forEach { viewer ->
             if (viewer.world == world) {
@@ -272,6 +331,8 @@ class UnifyNPC internal constructor(
     companion object {
         private const val CLICK_COOLDOWN_MS = 200L
         private const val HOLOGRAM_HEIGHT = 2.35
+        /** Must match the text-line spacing the NMS hologram renderer uses. */
+        private const val LINE_SPACING = 0.25
 
         private fun cleanSkinValue(value: String?): String? {
             return value?.trim()?.takeIf { it.isNotEmpty() }

@@ -2,6 +2,7 @@ package me.jordanfails.unify.menu
 
 import com.cryptomorin.xseries.XMaterial
 import me.jordanfails.unify.UnifyCore
+import me.jordanfails.unify.menu.anvil.AnvilSession
 import me.jordanfails.unify.nms.LegacyColorDataType
 import me.jordanfails.unify.nms.LegacyItemColor
 import me.jordanfails.unify.nms.NMSHandlerFactory
@@ -326,6 +327,9 @@ abstract class Menu {
     open fun preAutoUpdate() {}
 
     private fun openCustomInventory(player: Player, inv: Inventory) {
+        // Anvil sessions own the open inventory; close them before a normal menu
+        AnvilSession.closeIfOpen(player, sendClosePacket = true)
+
         val title = ChatColor.translateAlternateColorCodes('&', getTitle(player))
         val nms = NMSHandlerFactory.getHandler()
 

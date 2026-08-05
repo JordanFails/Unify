@@ -9,6 +9,7 @@ import me.jordanfails.unify.bossbar.UnifyBossBar
 import me.jordanfails.unify.exception.InvalidOutputException
 import me.jordanfails.unify.hologram.HologramLine
 import me.jordanfails.unify.hologram.UnifyHologram
+import me.jordanfails.unify.menu.anvil.AnvilHandle
 import me.jordanfails.unify.nms.NMSHandler
 import me.jordanfails.unify.nms.ServerVersion
 import me.jordanfails.unify.npc.UnifyNPC
@@ -20,6 +21,7 @@ import org.bukkit.boss.BarStyle
 import org.bukkit.boss.BossBar
 import org.bukkit.craftbukkit.v1_9_R2.CraftWorld
 import org.bukkit.craftbukkit.v1_9_R2.entity.CraftPlayer
+import org.bukkit.craftbukkit.v1_9_R2.event.CraftEventFactory
 import org.bukkit.craftbukkit.v1_9_R2.inventory.CraftInventory
 import org.bukkit.craftbukkit.v1_9_R2.inventory.CraftItemStack
 import org.bukkit.entity.Player
@@ -162,6 +164,94 @@ class NMSHandler_v1_9_R2 : NMSHandler {
         val craft = player as CraftPlayer
         val handle = craft.handle
         handle.updateInventory(handle.activeContainer)
+    }
+
+    override fun openAnvil(player: Player, title: String): AnvilHandle {
+        val entityPlayer = (player as CraftPlayer).handle
+        CraftEventFactory.handleInventoryCloseEvent(entityPlayer)
+        entityPlayer.s() // doCloseContainer
+
+        val windowId = entityPlayer.nextContainerCounter()
+        val container = AnvilContainerHandle(player, windowId)
+
+        entityPlayer.playerConnection.sendPacket(
+            PacketPlayOutOpenWindow(
+                windowId,
+                "minecraft:anvil",
+                ChatMessage(Blocks.ANVIL.a() + ".name"),
+            )
+        )
+        entityPlayer.activeContainer = container
+        container.addSlotListener(entityPlayer)
+        return container
+    }
+
+    override fun supportsAnvilTitle(): Boolean = false
+
+    private class AnvilContainerHandle(
+        private val bukkitPlayer: Player,
+        private val windowIdValue: Int,
+    ) : ContainerAnvil(
+        (bukkitPlayer as CraftPlayer).handle.inventory,
+        (bukkitPlayer as CraftPlayer).handle.world,
+        BlockPosition(0, 0, 0),
+        (bukkitPlayer as CraftPlayer).handle,
+    ), AnvilHandle {
+
+        init {
+            windowId = windowIdValue
+        }
+
+        override val inventory: Inventory
+            get() = bukkitView.topInventory
+
+        override val containerId: Int
+            get() = windowIdValue
+
+        override fun e() {
+            val output = getSlot(2)
+            if (!output.hasItem()) {
+                val input = getSlot(0)
+                if (input.hasItem()) {
+                    val stack = input.item
+                    if (stack != null) {
+                        output.set(stack.cloneItemStack())
+                    }
+                }
+            }
+            a = 0 // cost
+            b()
+        }
+
+        override fun a(entityhuman: EntityHuman): Boolean = true
+
+        override fun b(entityhuman: EntityHuman) {
+        }
+
+        override fun getRenameText(): String = ""
+
+        override fun setRenameText(text: String) {
+            val item = inventory.getItem(0) ?: return
+            val meta = item.itemMeta ?: return
+            meta.displayName = text
+            item.itemMeta = meta
+            inventory.setItem(0, item)
+        }
+
+        override fun close(sendClosePacket: Boolean) {
+            val entityPlayer = (bukkitPlayer as CraftPlayer).handle
+            if (sendClosePacket) {
+                CraftEventFactory.handleInventoryCloseEvent(entityPlayer)
+                entityPlayer.s()
+                entityPlayer.activeContainer = entityPlayer.defaultContainer
+                entityPlayer.playerConnection.sendPacket(PacketPlayOutCloseWindow(windowIdValue))
+            } else if (entityPlayer.activeContainer === this) {
+                entityPlayer.activeContainer = entityPlayer.defaultContainer
+            }
+        }
+
+        override fun updateTitle(title: String, preserveRenameText: Boolean) {
+        }
     }
 
     override fun isCustomInventory(inventory: Inventory): Boolean {

@@ -9,16 +9,21 @@ import me.jordanfails.unify.bossbar.BossBarStyle
 import me.jordanfails.unify.bossbar.UnifyBossBar
 import me.jordanfails.unify.hologram.HologramLine
 import me.jordanfails.unify.hologram.UnifyHologram
+import me.jordanfails.unify.menu.anvil.AnvilHandle
 import me.jordanfails.unify.nms.NMSHandler
 import me.jordanfails.unify.nms.ServerVersion
 import me.jordanfails.unify.npc.UnifyNPC
 import net.kyori.adventure.text.minimessage.MiniMessage
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
 import net.minecraft.ChatFormatting
+import net.minecraft.core.BlockPos
+import net.minecraft.core.component.DataComponents
 import net.minecraft.network.chat.Component
 import net.minecraft.network.Connection
 import net.minecraft.network.protocol.Packet
 import net.minecraft.network.protocol.PacketFlow
+import net.minecraft.network.protocol.game.ClientboundContainerClosePacket
+import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket
 import net.minecraft.network.protocol.game.ClientboundAddEntityPacket
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket
@@ -37,6 +42,9 @@ import net.minecraft.server.network.ServerGamePacketListenerImpl
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.decoration.ArmorStand
 import net.minecraft.world.entity.item.ItemEntity
+import net.minecraft.world.inventory.AnvilMenu
+import net.minecraft.world.inventory.ContainerLevelAccess
+import net.minecraft.world.inventory.MenuType
 import net.minecraft.world.scores.DisplaySlot
 import net.minecraft.world.scores.Objective
 import net.minecraft.world.scores.PlayerTeam
@@ -52,7 +60,11 @@ import org.bukkit.boss.BossBar
 import org.bukkit.craftbukkit.CraftServer
 import org.bukkit.craftbukkit.CraftWorld
 import org.bukkit.craftbukkit.entity.CraftPlayer
+import org.bukkit.craftbukkit.event.CraftEventFactory
 import org.bukkit.craftbukkit.inventory.CraftItemStack
+import io.papermc.paper.event.player.PlayerTrackEntityEvent
+import org.bukkit.event.EventHandler
+import org.bukkit.event.Listener
 import org.bukkit.entity.Player
 import org.bukkit.inventory.Inventory
 import org.bukkit.inventory.ItemStack
@@ -69,6 +81,12 @@ import java.util.UUID
 @Suppress("unused")
 class NMSHandler_v1_21_R1 : NMSHandler {
     private val npcPlayers = mutableMapOf<UUID, ServerPlayer>()
+
+    /** Resolved Mojang skins, keyed by lowercased player name. */
+    private val namedSkinCache = java.util.concurrent.ConcurrentHashMap<String, ResolvedNamedSkin>()
+    /** Names with a Mojang lookup already in flight, so we never queue a name twice. */
+    private val namedSkinInFlight = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private var npcTrackListenerRegistered = false
     
     override fun sendTitle(
         player: Player,
@@ -181,6 +199,127 @@ class NMSHandler_v1_21_R1 : NMSHandler {
         return holder == null || holder is Player || holder !is BlockState
     }
 
+    override fun openAnvil(player: Player, title: String): AnvilHandle {
+        val serverPlayer = (player as CraftPlayer).handle
+        handleInventoryClose(serverPlayer)
+
+        val containerId = serverPlayer.nextContainerCounter()
+        val titleComponent = Component.literal(title)
+        val container = AnvilContainerHandle(player, containerId, titleComponent)
+
+        serverPlayer.connection.send(
+            ClientboundOpenScreenPacket(containerId, MenuType.ANVIL, titleComponent)
+        )
+        serverPlayer.containerMenu = container
+        serverPlayer.initMenu(container)
+        return container
+    }
+
+    override fun supportsAnvilTitle(): Boolean = true
+
+    private fun handleInventoryClose(serverPlayer: ServerPlayer) {
+        fireInventoryCloseEvent(serverPlayer)
+        serverPlayer.doCloseContainer()
+    }
+
+    companion object {
+        fun fireInventoryCloseEvent(serverPlayer: ServerPlayer) {
+            try {
+                val reasonClass = Class.forName("org.bukkit.event.inventory.InventoryCloseEvent\$Reason")
+                val method = CraftEventFactory::class.java.getMethod(
+                    "handleInventoryCloseEvent",
+                    net.minecraft.world.entity.player.Player::class.java,
+                    reasonClass,
+                )
+                method.invoke(null, serverPlayer, reasonClass.getField("UNKNOWN").get(null))
+                return
+            } catch (_: ReflectiveOperationException) {
+            } catch (_: NoSuchMethodError) {
+            }
+            try {
+                val method = CraftEventFactory::class.java.getMethod(
+                    "handleInventoryCloseEvent",
+                    net.minecraft.world.entity.player.Player::class.java,
+                )
+                method.invoke(null, serverPlayer)
+            } catch (_: ReflectiveOperationException) {
+            }
+        }
+    }
+
+    private class AnvilContainerHandle(
+        private val bukkitPlayer: Player,
+        private val windowId: Int,
+        guiTitle: Component,
+    ) : AnvilMenu(
+        windowId,
+        (bukkitPlayer as CraftPlayer).handle.inventory,
+        ContainerLevelAccess.create(
+            (bukkitPlayer.world as CraftWorld).handle,
+            BlockPos(0, 0, 0),
+        ),
+    ), AnvilHandle {
+
+        init {
+            this.checkReachable = false
+            setTitle(guiTitle)
+        }
+
+        override val inventory: Inventory
+            get() = bukkitView.topInventory
+
+        override val containerId: Int
+            get() = windowId
+
+        override fun createResult() {
+            val output = getSlot(2)
+            if (!output.hasItem()) {
+                output.set(getSlot(0).item.copy())
+            }
+            cost.set(0)
+            sendAllDataToRemote()
+            broadcastChanges()
+        }
+
+        override fun removed(player: net.minecraft.world.entity.player.Player) {
+        }
+
+        override fun clearContainer(player: net.minecraft.world.entity.player.Player, container: net.minecraft.world.Container) {
+        }
+
+        override fun getRenameText(): String = itemName ?: ""
+
+        override fun setRenameText(text: String) {
+            val inputLeft = getSlot(0)
+            if (inputLeft.hasItem()) {
+                inputLeft.item.set(DataComponents.CUSTOM_NAME, Component.literal(text))
+            }
+        }
+
+        override fun close(sendClosePacket: Boolean) {
+            val serverPlayer = (bukkitPlayer as CraftPlayer).handle
+            if (sendClosePacket) {
+                fireInventoryCloseEvent(serverPlayer)
+                serverPlayer.doCloseContainer()
+                serverPlayer.containerMenu = serverPlayer.inventoryMenu
+                serverPlayer.connection.send(ClientboundContainerClosePacket(windowId))
+            } else if (serverPlayer.containerMenu === this) {
+                serverPlayer.containerMenu = serverPlayer.inventoryMenu
+            }
+        }
+
+        override fun updateTitle(title: String, preserveRenameText: Boolean) {
+            val rename = getRenameText()
+            val component = Component.literal(title)
+            (bukkitPlayer as CraftPlayer).handle.connection.send(
+                ClientboundOpenScreenPacket(windowId, MenuType.ANVIL, component)
+            )
+            if (preserveRenameText) {
+                setRenameText(rename)
+            }
+        }
+    }
+
     override fun spawnPlayerNpc(id: String, location: Location, skinType: UnifyNPC.SkinType?, skinValue: String?): UUID? {
         return try {
             val bukkitWorld = location.world ?: return null
@@ -188,20 +327,25 @@ class NMSHandler_v1_21_R1 : NMSHandler {
             val server = (Bukkit.getServer() as CraftServer).server
 
             val requestedName = skinValue?.trim().orEmpty()
+            // Cache-only lookup here: resolving a name hits the Mojang API over the network,
+            // and this runs on the main thread (plugin enable, /npc create). On a miss the NPC
+            // spawns skinless and [prefetchNamedSkin] re-applies it once the fetch completes.
             val resolvedNamedSkin = if (skinType == UnifyNPC.SkinType.NAME && requestedName.isNotEmpty()) {
-                resolveNamedSkin(requestedName)
+                cachedNamedSkin(requestedName) ?: run {
+                    prefetchNamedSkin(id, requestedName)
+                    null
+                }
             } else {
                 null
             }
 
-            val profileUuid = when (skinType) {
-                UnifyNPC.SkinType.NAME -> resolvedNamedSkin?.uuid
-                    ?: Bukkit.getOfflinePlayer(requestedName.ifEmpty { id }).uniqueId
-                else -> UUID.randomUUID()
-            }
-            val profileName = sanitizeNpcName(
-                if (skinType == UnifyNPC.SkinType.NAME) requestedName.ifEmpty { id } else id
-            )
+            // The fake player must never share an identity with the account supplying its skin.
+            // Scoreboard teams address entries by profile name, so reusing a real player's name
+            // lets ordinary nametag updates pull the NPC out of its hidden-name team. Reusing the
+            // real UUID can also collide with that player in entity and player-info tracking.
+            // Skin textures are already copied onto the independent profile below.
+            val profileUuid = UUID.randomUUID()
+            val profileName = "npc${profileUuid.toString().replace("-", "").take(13)}"
             val profile = GameProfile(profileUuid, profileName)
             applySkin(profile, skinType, skinValue, resolvedNamedSkin)
 
@@ -212,6 +356,11 @@ class NMSHandler_v1_21_R1 : NMSHandler {
             npc.isNoGravity = true
             npc.isInvulnerable = true
 
+            npcPlayers[profileUuid] = npc
+            // Must be registered before the entity joins the level, so the very first
+            // tracking pass already carries the profile packet (and therefore the skin).
+            ensureNpcTrackListener()
+
             world.addNewPlayer(npc)
             val bukkitEntity = npc.bukkitEntity
             bukkitEntity.isCollidable = false
@@ -219,11 +368,9 @@ class NMSHandler_v1_21_R1 : NMSHandler {
             bukkitEntity.isSilent = true
             bukkitEntity.isInvulnerable = true
 
-            npcPlayers[profileUuid] = npc
-            Bukkit.getOnlinePlayers().forEach { viewer ->
-                sendPlayerNpcSpawnPackets(viewer, npc)
-                scheduleHidePlayerNpcFromTab(viewer, profileUuid, 20L)
-            }
+            // No manual spawn burst here: the entity is in the level, so the server's own
+            // tracker sends the add-entity packet to every viewer in range, now and whenever
+            // one comes back into range. Sending our own copy too spawned it twice.
             profileUuid
         } catch (e: Exception) {
             e.printStackTrace()
@@ -274,39 +421,48 @@ class NMSHandler_v1_21_R1 : NMSHandler {
 
     override fun showPlayerNpcToViewer(viewer: Player, npcUuid: UUID) {
         val npc = npcPlayers[npcUuid] ?: return
-        sendPlayerNpcSpawnPackets(viewer, npc)
-        scheduleHidePlayerNpcFromTab(viewer, npcUuid, 20L)
+        // The tracker owns the entity packets; only the profile needs re-asserting.
+        sendPlayerNpcProfile(viewer, npc)
     }
 
-    private fun sendPlayerNpcSpawnPackets(viewer: Player, npc: ServerPlayer) {
+    /**
+     * Sends the tab-list entry that carries the NPC's skin, then drops it again.
+     *
+     * The client binds a player entity's skin from its player-info entry, so the entry has
+     * to exist when the spawn packet lands — but it must not linger, or the NPC shows up in
+     * everyone's tab list. One tick is enough for the client to bind it, and short enough
+     * that the entry never renders. (The old code waited 20 ticks: a full second of the NPC
+     * sitting in the tab list.)
+     */
+    private fun sendPlayerNpcProfile(viewer: Player, npc: ServerPlayer) {
         try {
-            val craftViewer = viewer as CraftPlayer
-            val connection = craftViewer.handle.connection
+            val connection = (viewer as CraftPlayer).handle.connection
             createPlayerInfoAddPacket(npc)?.let { connection.send(it) }
-
-            val addPacket = ClientboundAddEntityPacket(
-                npc.id,
-                npc.uuid,
-                npc.x,
-                npc.y,
-                npc.z,
-                npc.xRot,
-                npc.yRot,
-                npc.type,
-                0,
-                npc.deltaMovement,
-                npc.yHeadRot.toDouble()
-            )
-            connection.send(addPacket)
-
-            val dataValues = npc.entityData.packAll()
-            if (dataValues != null) {
-                connection.send(ClientboundSetEntityDataPacket(npc.id, dataValues))
-            }
-
             sendHideNpcNametag(connection, npc)
+            scheduleHidePlayerNpcFromTab(viewer, npc.uuid, 1L)
         } catch (_: Exception) {
         }
+    }
+
+    /**
+     * Feeds the NPC's profile to each viewer the moment the server starts tracking it.
+     *
+     * Without this, only players online at spawn time ever received the profile packet;
+     * anyone who joined later, changed worlds, or simply walked out of range and back got
+     * the tracker's spawn packet with no profile attached, and rendered a default skin.
+     */
+    private fun ensureNpcTrackListener() {
+        if (npcTrackListenerRegistered) return
+        npcTrackListenerRegistered = true
+
+        val plugin = UnifyCore.instance
+        Bukkit.getPluginManager().registerEvents(object : Listener {
+            @EventHandler
+            fun onTrack(event: PlayerTrackEntityEvent) {
+                val npc = npcPlayers[event.entity.uniqueId] ?: return
+                sendPlayerNpcProfile(event.player, npc)
+            }
+        }, plugin)
     }
 
     private fun sendHideNpcNametag(connection: net.minecraft.server.network.ServerGamePacketListenerImpl, npc: ServerPlayer) {
@@ -384,6 +540,43 @@ class NMSHandler_v1_21_R1 : NMSHandler {
         val textureValue: String,
         val textureSignature: String?,
     )
+
+    /** Already-known skin for [name], without touching the network. */
+    private fun cachedNamedSkin(name: String): ResolvedNamedSkin? {
+        val key = name.lowercase(Locale.ROOT)
+        namedSkinCache[key]?.let { return it }
+
+        // An online player carries their textures already — no lookup needed.
+        val online = Bukkit.getPlayerExact(name) as? CraftPlayer ?: return null
+        val sourceProfile = online.handle.gameProfile
+        val texture = getProfileTextures(sourceProfile).firstOrNull() ?: return null
+        return ResolvedNamedSkin(sourceProfile.id, texture.value, texture.signature)
+            .also { namedSkinCache[key] = it }
+    }
+
+    /**
+     * Resolves [name]'s skin off the main thread and re-applies it to NPC [npcId] once it
+     * lands. Spawning stays non-blocking: the NPC appears immediately, skinless, and gains
+     * its skin a moment later.
+     */
+    private fun prefetchNamedSkin(npcId: String, name: String) {
+        val key = name.lowercase(Locale.ROOT)
+        if (!namedSkinInFlight.add(key)) return
+
+        val plugin = UnifyCore.instance
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, Runnable {
+            val resolved = runCatching { resolveNamedSkin(name) }.getOrNull()
+            namedSkinInFlight.remove(key)
+            if (resolved == null) return@Runnable
+            namedSkinCache[key] = resolved
+
+            Bukkit.getScheduler().runTask(plugin, Runnable {
+                // Re-apply through the public API so the NPC respawns with the skin bound.
+                me.jordanfails.unify.npc.NPCManager.get(npcId)
+                    ?.setSkin(UnifyNPC.SkinType.NAME, name)
+            })
+        })
+    }
 
     private fun resolveNamedSkin(name: String): ResolvedNamedSkin? {
         val onlineSource = Bukkit.getPlayerExact(name) as? CraftPlayer
@@ -735,185 +928,188 @@ class NMSHandler_v1_21_R1 : NMSHandler {
     }
     
     // --- Hologram Implementation (1.21 uses NMS ArmorStands) ---
-    private val playerHologramEntities = mutableMapOf<UUID, MutableMap<UUID, List<Int>>>()
-    private var entityIdCounter = 1000000
-    
+
+    /**
+     * What a given viewer currently has spawned for a hologram.
+     *
+     * [anchor] is the location the entities were spawned at. As long as it and the line
+     * shape are unchanged, updates are sent as metadata only — respawning the entities
+     * makes the text visibly blink on every refresh, which is very obvious on holograms
+     * that auto-update on a timer (leaderboards, countdowns).
+     */
+    private data class HologramView(
+        val entityIds: List<Int>,
+        val anchorWorld: UUID?,
+        val anchorX: Double,
+        val anchorY: Double,
+        val anchorZ: Double,
+        val shape: List<Boolean>,
+    )
+
+    private val playerHologramEntities = mutableMapOf<UUID, MutableMap<UUID, HologramView>>()
+
+    /** Vertical gap between two stacked text lines. */
+    private val TEXT_LINE_SPACING = 0.25
+    /** Vertical gap taken by a floating item line. */
+    private val ITEM_LINE_SPACING = 0.5
+
+    /** True for a text line, false for an item line — used to detect shape changes. */
+    private fun shapeOf(hologram: UnifyHologram): List<Boolean> =
+        hologram.lines.map { it is HologramLine.Text }
+
+    private fun viewOf(player: Player, hologram: UnifyHologram): HologramView? =
+        playerHologramEntities[player.uniqueId]?.get(hologram.uuid)
+
     override fun showHologram(player: Player, hologram: UnifyHologram) {
         spawnHologram(player, hologram)
     }
-    
+
     override fun hideHologram(player: Player, hologram: UnifyHologram) {
-        val entityIds = playerHologramEntities[player.uniqueId]?.remove(hologram.uuid) ?: return
-        if (entityIds.isNotEmpty()) {
-            val removePacket = ClientboundRemoveEntitiesPacket(*entityIds.toIntArray())
+        val view = playerHologramEntities[player.uniqueId]?.remove(hologram.uuid) ?: return
+        if (view.entityIds.isNotEmpty()) {
+            val removePacket = ClientboundRemoveEntitiesPacket(*view.entityIds.toIntArray())
             (player as CraftPlayer).handle.connection.send(removePacket)
         }
     }
-    
+
     override fun updateHologram(player: Player, hologram: UnifyHologram) {
-        val currentIds = playerHologramEntities[player.uniqueId]?.get(hologram.uuid)
-        if (currentIds != null && currentIds.size == hologram.lines.size) {
-            updateHologramLines(player, hologram, currentIds)
+        val view = viewOf(player, hologram)
+        val location = hologram.location
+        val sameAnchor = view != null &&
+            view.anchorWorld == location.world?.uid &&
+            view.anchorX == location.x &&
+            view.anchorY == location.y &&
+            view.anchorZ == location.z
+        // Only a pure text swap at a fixed position can be done without respawning.
+        if (view != null && sameAnchor && view.shape == shapeOf(hologram)) {
+            updateHologramLines(player, hologram, view)
         } else {
             hideHologram(player, hologram)
             spawnHologram(player, hologram)
         }
     }
-    
+
+    /**
+     * Builds the armour stand backing a text line.
+     *
+     * Every flag set here must also be set on the update path, otherwise the client
+     * recalculates the nameplate offset and the line jumps.
+     */
+    private fun newTextStand(level: net.minecraft.world.level.Level, x: Double, y: Double, z: Double, text: String): ArmorStand {
+        val armorStand = ArmorStand(level, x, y, z)
+        armorStand.customName = parseText(text)
+        armorStand.isCustomNameVisible = true
+        armorStand.isInvisible = true
+        armorStand.isNoGravity = true
+        armorStand.isSmall = true
+        armorStand.isMarker = true
+        return armorStand
+    }
+
     private fun spawnHologram(player: Player, hologram: UnifyHologram) {
         try {
             val lines = hologram.lines
             val entityIds = mutableListOf<Int>()
             var currentY = hologram.location.y
-            
-            val world = (player.world as CraftWorld).handle
+
+            // Spawn against the hologram's own world, not the viewer's — they can differ
+            // while a player is mid-teleport.
+            val bukkitWorld = hologram.location.world ?: player.world
+            val world = (bukkitWorld as CraftWorld).handle
             val connection = (player as CraftPlayer).handle.connection
-            
+
             for (line in lines) {
-                val entityId = entityIdCounter++
-                entityIds.add(entityId)
-                
                 when (line) {
                     is HologramLine.Text -> {
-                        val armorStand = ArmorStand(world, hologram.location.x, currentY, hologram.location.z)
-                        armorStand.id = entityId
-                        armorStand.customName = parseText(line.text)
-                        armorStand.isCustomNameVisible = true
-                        armorStand.isInvisible = true
-                        armorStand.isNoGravity = true
-                        armorStand.isSmall = true
-                        armorStand.isMarker = true
-                        
-                        val addPacket = ClientboundAddEntityPacket(
-                            entityId,
-                            armorStand.uuid,
-                            armorStand.x,
-                            armorStand.y,
-                            armorStand.z,
-                            armorStand.xRot,
-                            armorStand.yRot,
-                            armorStand.type,
-                            0,
-                            armorStand.deltaMovement,
-                            armorStand.yHeadRot.toDouble()
-                        )
-                        connection.send(addPacket)
-                        
-                        val dataValues = armorStand.entityData.packAll()
-                        if (dataValues != null) {
-                            val metaPacket = ClientboundSetEntityDataPacket(entityId, dataValues)
-                            connection.send(metaPacket)
+                        val armorStand = newTextStand(world, hologram.location.x, currentY, hologram.location.z, line.text)
+                        // Reuse the id the entity allocated for itself: it comes from the
+                        // server's real entity counter, so it cannot collide with a live
+                        // entity the way a hand-rolled counter can.
+                        val entityId = armorStand.id
+                        entityIds.add(entityId)
+
+                        connection.send(addEntityPacket(armorStand, entityId))
+                        armorStand.entityData.packAll()?.let {
+                            connection.send(ClientboundSetEntityDataPacket(entityId, it))
                         }
-                        currentY -= 0.25
+                        currentY -= TEXT_LINE_SPACING
                     }
                     is HologramLine.Item -> {
                         val nmsItem = CraftItemStack.asNMSCopy(line.itemStack)
                         val itemEntity = ItemEntity(world, hologram.location.x, currentY, hologram.location.z, nmsItem)
-                        itemEntity.id = entityId
                         itemEntity.isNoGravity = true
                         itemEntity.setNeverPickUp()
-                        
-                        val addPacket = ClientboundAddEntityPacket(
-                            entityId,
-                            itemEntity.uuid,
-                            itemEntity.x,
-                            itemEntity.y,
-                            itemEntity.z,
-                            itemEntity.xRot,
-                            itemEntity.yRot,
-                            itemEntity.type,
-                            0,
-                            itemEntity.deltaMovement,
-                            itemEntity.yHeadRot.toDouble()
-                        )
-                        connection.send(addPacket)
-                        
-                        val dataValues = itemEntity.entityData.packAll()
-                        if (dataValues != null) {
-                            val metaPacket = ClientboundSetEntityDataPacket(entityId, dataValues)
-                            connection.send(metaPacket)
+                        val entityId = itemEntity.id
+                        entityIds.add(entityId)
+
+                        connection.send(addEntityPacket(itemEntity, entityId))
+                        itemEntity.entityData.packAll()?.let {
+                            connection.send(ClientboundSetEntityDataPacket(entityId, it))
                         }
-                        currentY -= 0.5
+                        currentY -= ITEM_LINE_SPACING
                     }
                 }
             }
-            playerHologramEntities.getOrPut(player.uniqueId) { mutableMapOf() }[hologram.uuid] = entityIds
+
+            playerHologramEntities.getOrPut(player.uniqueId) { mutableMapOf() }[hologram.uuid] = HologramView(
+                entityIds = entityIds,
+                anchorWorld = hologram.location.world?.uid,
+                anchorX = hologram.location.x,
+                anchorY = hologram.location.y,
+                anchorZ = hologram.location.z,
+                shape = shapeOf(hologram),
+            )
         } catch (e: Exception) {
             e.printStackTrace()
         }
     }
-    
-    private fun updateHologramLines(player: Player, hologram: UnifyHologram, entityIds: List<Int>) {
+
+    private fun addEntityPacket(entity: Entity, entityId: Int): ClientboundAddEntityPacket =
+        ClientboundAddEntityPacket(
+            entityId,
+            entity.uuid,
+            entity.x,
+            entity.y,
+            entity.z,
+            entity.xRot,
+            entity.yRot,
+            entity.type,
+            0,
+            entity.deltaMovement,
+            entity.yHeadRot.toDouble()
+        )
+
+    /**
+     * Re-sends only the entity metadata for each line, leaving the entities themselves
+     * alone. The text changes in place with no despawn/respawn blink.
+     */
+    private fun updateHologramLines(player: Player, hologram: UnifyHologram, view: HologramView) {
         try {
             val lines = hologram.lines
             var currentY = hologram.location.y
-            val world = (player.world as CraftWorld).handle
+            val bukkitWorld = hologram.location.world ?: player.world
+            val world = (bukkitWorld as CraftWorld).handle
             val connection = (player as CraftPlayer).handle.connection
-            
+
             for (i in lines.indices) {
-                val entityId = entityIds[i]
-                // 1.21+ changed teleport packet internals between minor releases.
-                // Re-spawn each existing line entity with the same id to avoid brittle teleport constructors.
-                connection.send(ClientboundRemoveEntitiesPacket(entityId))
+                val entityId = view.entityIds[i]
                 when (val line = lines[i]) {
                     is HologramLine.Text -> {
-                        val armorStand = ArmorStand(world, hologram.location.x, currentY, hologram.location.z)
-                        armorStand.id = entityId
-                        armorStand.customName = parseText(line.text)
-                        armorStand.isCustomNameVisible = true
-                        armorStand.isInvisible = true
-                        armorStand.isMarker = true
-                        
-                        val addPacket = ClientboundAddEntityPacket(
-                            entityId,
-                            armorStand.uuid,
-                            armorStand.x,
-                            armorStand.y,
-                            armorStand.z,
-                            armorStand.xRot,
-                            armorStand.yRot,
-                            armorStand.type,
-                            0,
-                            armorStand.deltaMovement,
-                            armorStand.yHeadRot.toDouble()
-                        )
-                        connection.send(addPacket)
-
-                        val dataValues = armorStand.entityData.packAll()
-                        if (dataValues != null) {
-                            val metaPacket = ClientboundSetEntityDataPacket(entityId, dataValues)
-                            connection.send(metaPacket)
+                        val armorStand = newTextStand(world, hologram.location.x, currentY, hologram.location.z, line.text)
+                        armorStand.entityData.packAll()?.let {
+                            connection.send(ClientboundSetEntityDataPacket(entityId, it))
                         }
-                        currentY -= 0.25
+                        currentY -= TEXT_LINE_SPACING
                     }
                     is HologramLine.Item -> {
                         val nmsItem = CraftItemStack.asNMSCopy(line.itemStack)
                         val itemEntity = ItemEntity(world, hologram.location.x, currentY, hologram.location.z, nmsItem)
-                        itemEntity.id = entityId
                         itemEntity.isNoGravity = true
                         itemEntity.setNeverPickUp()
-
-                        val addPacket = ClientboundAddEntityPacket(
-                            entityId,
-                            itemEntity.uuid,
-                            itemEntity.x,
-                            itemEntity.y,
-                            itemEntity.z,
-                            itemEntity.xRot,
-                            itemEntity.yRot,
-                            itemEntity.type,
-                            0,
-                            itemEntity.deltaMovement,
-                            itemEntity.yHeadRot.toDouble()
-                        )
-                        connection.send(addPacket)
-                        
-                        val dataValues = itemEntity.entityData.packAll()
-                        if (dataValues != null) {
-                            val metaPacket = ClientboundSetEntityDataPacket(entityId, dataValues)
-                            connection.send(metaPacket)
+                        itemEntity.entityData.packAll()?.let {
+                            connection.send(ClientboundSetEntityDataPacket(entityId, it))
                         }
-                        currentY -= 0.5
+                        currentY -= ITEM_LINE_SPACING
                     }
                 }
             }

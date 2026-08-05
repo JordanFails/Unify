@@ -2,6 +2,7 @@ package me.jordanfails.unify.nms
 
 import me.jordanfails.unify.bossbar.UnifyBossBar
 import me.jordanfails.unify.hologram.UnifyHologram
+import me.jordanfails.unify.menu.anvil.AnvilHandle
 import me.jordanfails.unify.npc.UnifyNPC
 import org.bukkit.Location
 import org.bukkit.entity.Player
@@ -42,6 +43,16 @@ interface NMSHandler {
     fun updateMenuTitle(player: Player, title: String)
     fun refreshMenuInventory(player: Player)
     fun isCustomInventory(inventory: Inventory): Boolean
+
+    // --- Anvil input GUI ---
+    /**
+     * Opens a custom anvil container for text input (no XP cost, always reachable).
+     * @param title inventory title (supported on 1.14+; ignored on older versions)
+     */
+    fun openAnvil(player: Player, title: String): AnvilHandle
+
+    /** Whether custom anvil titles are shown to the client (false on 1.8–1.13). */
+    fun supportsAnvilTitle(): Boolean = true
 
     // --- Nametag Visibility (ScoreboardTeam packets) ---
     /**
@@ -164,4 +175,5 @@ interface NMSHandler {
     fun teleportPlayerNpc(uuid: UUID, location: Location): Boolean = false
     fun hidePlayerNpcFromTab(viewer: Player, npcUuid: UUID) { }
     fun showPlayerNpcToViewer(viewer: Player, npcUuid: UUID) { }
+
 }

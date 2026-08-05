@@ -13,7 +13,9 @@ import org.bukkit.event.player.PlayerChangedWorldEvent
 import org.bukkit.event.player.PlayerInteractAtEntityEvent
 import org.bukkit.event.player.PlayerInteractEntityEvent
 import org.bukkit.event.player.PlayerJoinEvent
+import org.bukkit.event.player.PlayerMoveEvent
 import org.bukkit.event.player.PlayerQuitEvent
+import org.bukkit.event.world.ChunkLoadEvent
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -91,17 +93,67 @@ object NPCManager : Listener {
 
     fun setSkin(id: String, type: UnifyNPC.SkinType, value: String): Boolean {
         val npc = get(id) ?: return false
-        npc.setSkin(type, value)
-        syncEntityLookup(npc)
-        save()
-        return true
+        return try {
+            npc.setSkin(type, value)
+            syncEntityLookup(npc)
+            // Skin swaps despawn/respawn the body — only persist when it still exists.
+            if (npc.isSpawned()) {
+                save()
+                true
+            } else {
+                // Rebuild once so a failed skin apply never leaves a permanent hole.
+                spawnNpc(npc)
+                save()
+                npc.isSpawned()
+            }
+        } catch (e: Exception) {
+            plugin.logger.warning("Failed to set skin on NPC '$id': ${e.message}")
+            e.printStackTrace()
+            spawnNpc(npc)
+            save()
+            false
+        }
     }
 
     fun clearSkin(id: String): Boolean {
         val npc = get(id) ?: return false
-        npc.clearSkin()
-        syncEntityLookup(npc)
-        save()
+        return try {
+            npc.clearSkin()
+            syncEntityLookup(npc)
+            if (!npc.isSpawned()) spawnNpc(npc)
+            save()
+            true
+        } catch (e: Exception) {
+            plugin.logger.warning("Failed to clear skin on NPC '$id': ${e.message}")
+            spawnNpc(npc)
+            save()
+            false
+        }
+    }
+
+    /**
+     * Ensure the NPC entity exists in a loaded world and is shown to nearby players.
+     * Call after chunk loads or when a viewer walks back into range.
+     */
+    fun ensureSpawned(id: String): Boolean {
+        val npc = get(id) ?: return false
+        val location = npc.spawnLocation
+        val world = location.world ?: return false
+        if (!world.isChunkLoaded(location.blockX shr 4, location.blockZ shr 4)) {
+            return false
+        }
+        val ok = npc.ensureSpawned(plugin)
+        if (ok) syncEntityLookup(npc)
+        return ok
+    }
+
+    /** Re-send the NPC body + hologram to [player] if they share a world. */
+    fun refreshViewer(id: String, player: Player): Boolean {
+        val npc = get(id) ?: return false
+        if (!npc.isSpawned()) {
+            if (!ensureSpawned(id)) return false
+        }
+        npc.refreshViewer(player)
         return true
     }
 
@@ -109,6 +161,19 @@ object NPCManager : Listener {
         val npc = get(id) ?: return false
         npc.setHologramLines(lines)
         save()
+        return true
+    }
+
+    /**
+     * Same as [setHologramLines] but without persisting to `npcs.yml`.
+     *
+     * For text that is regenerated on a timer — leaderboards, countdowns, live counters —
+     * the saved copy is worthless (it is overwritten seconds later anyway) and saving would
+     * rewrite the whole file on the main thread on every refresh.
+     */
+    fun setTransientHologramLines(id: String, lines: List<String>): Boolean {
+        val npc = get(id) ?: return false
+        npc.setHologramLines(lines)
         return true
     }
 
@@ -279,6 +344,51 @@ object NPCManager : Listener {
         npcs.values.forEach { npc ->
             npc.removeViewer(event.player)
             npc.addViewer(event.player)
+        }
+    }
+
+    /**
+     * NMS player NPCs are added to the level via `addNewPlayer`, so chunk unload discards
+     * the entity. Rebuild any NPC that lives in the reloaded chunk.
+     */
+    @EventHandler
+    fun onChunkLoad(event: ChunkLoadEvent) {
+        val chunk = event.chunk
+        for (npc in npcs.values) {
+            val loc = npc.spawnLocation
+            if (loc.world != chunk.world) continue
+            if (loc.blockX shr 4 != chunk.x || loc.blockZ shr 4 != chunk.z) continue
+            Bukkit.getScheduler().runTask(plugin, Runnable {
+                if (!npc.isSpawned()) {
+                    spawnNpc(npc)
+                } else {
+                    npc.refreshAllViewers()
+                }
+            })
+        }
+    }
+
+    /**
+     * When a player walks into range of an NPC that lost its body (chunk cycle without a
+     * clean re-show), ensure + re-show them.
+     */
+    @EventHandler(ignoreCancelled = true)
+    fun onMove(event: PlayerMoveEvent) {
+        val from = event.from
+        val to = event.to ?: return
+        if (from.blockX == to.blockX && from.blockY == to.blockY && from.blockZ == to.blockZ) return
+
+        val player = event.player
+        val rangeSq = 48.0 * 48.0
+        for (npc in npcs.values) {
+            val loc = npc.spawnLocation
+            if (loc.world != player.world) continue
+            if (player.location.distanceSquared(loc) > rangeSq) continue
+            if (!npc.isSpawned()) {
+                spawnNpc(npc)
+            } else {
+                npc.refreshViewer(player)
+            }
         }
     }
 }

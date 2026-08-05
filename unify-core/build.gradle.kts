@@ -13,6 +13,12 @@ repositories {
     maven("https://repo.papermc.io/repository/maven-public/") {
         name = "papermc-repo"
     }
+    maven("https://repo.codemc.io/repository/maven-public/") {
+        name = "codemc"
+    }
+    maven("https://repo.codemc.io/repository/maven-releases/") {
+        name = "codemc-releases"
+    }
     maven("https://repo.aikar.co/content/groups/aikar/") {
         name = "aikar"
     }
@@ -40,7 +46,10 @@ dependencies {
     compileOnly(kotlin("reflect"))
     implementation("com.github.cryptomorin:XSeries:13.7.1")
     implementation("co.aikar:acf-paper:0.5.1-SNAPSHOT")
-    implementation("io.github.jordanfails:honey:1.1.1")
+    implementation("io.github.jordanfails:honey:1.1.2")
+    // Unify exposes the official NBT-API types directly for entity, tile-entity,
+    // and item NBT. The NBTAPI plugin supplies this dependency at runtime.
+    compileOnly("de.tr7zw:item-nbt-api-plugin:2.15.5")
     compileOnly("com.sk89q.worldguard:worldguard-bukkit:7.0.5")
     compileOnly("com.sk89q.worldedit:worldedit-bukkit:7.2.0")
 //    compileOnly("com.mojang:authlib:3.18.38")

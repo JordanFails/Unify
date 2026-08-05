@@ -39,12 +39,43 @@ import kotlin.math.ceil
  * ```
  */
 abstract class BorderedMenu(
-    private val emptyBorderSlots: Set<Int> = emptySet()
+    private val emptyBorderSlots: Set<Int> = emptySet(),
+    /**
+     * When enabled, the keys returned by [getContentButtons] are treated only
+     * as ordering indexes. Buttons are placed, in key order, into the next
+     * available inner slot instead of using those keys as inventory slots.
+     *
+     * Keys listed in [autoPlaceExceptions] (or returned by
+     * [getAutoPlaceExceptions]) keep their absolute inventory slots and are
+     * skipped by auto-placement.
+     *
+     * This is disabled by default so existing menus with explicitly positioned
+     * controls (such as back and navigation buttons) keep their absolute slots.
+     * Enable it only for menus whose ordinary entries should flow through the
+     * inner item spaces.
+     */
+    var autoPlaceContentButtons: Boolean = false,
+    /**
+     * Map keys from [getContentButtons] that should keep absolute inventory
+     * slots when [autoPlaceContentButtons] is enabled. All other buttons are
+     * auto-placed into remaining free content slots.
+     *
+     * Example: with auto-place on, key `0`/`1` fill inner slots in order, while
+     * key `49` stays at inventory slot 49 if `49` is in this set.
+     */
+    var autoPlaceExceptions: Set<Int> = emptySet()
 ) : Menu() {
 
     init {
         autoUpdate = true
     }
+
+    /**
+     * Content-button map keys that keep absolute inventory positions when
+     * [autoPlaceContentButtons] is enabled. Defaults to [autoPlaceExceptions];
+     * override for player-specific fixed slots.
+     */
+    open fun getAutoPlaceExceptions(player: Player): Set<Int> = autoPlaceExceptions
 
     /**
      * Override this to fill the *content* (inner area) of your menu with actual buttons.
@@ -71,6 +102,44 @@ abstract class BorderedMenu(
         val contentButtons = getContentButtons(player)
         if (contentButtons.isEmpty()) return getMinSize().takeIf { it > 0 } ?: 27
 
+        if (autoPlaceContentButtons) {
+            val exceptions = getAutoPlaceExceptions(player)
+            val autoPlaceCount = contentButtons.keys.count { it !in exceptions }
+            val highestFixed = contentButtons.keys
+                .filter { it in exceptions }
+                .maxOrNull()
+                ?: -1
+
+            val contentRows = if (hasBorder()) {
+                (autoPlaceCount + 6) / 7
+            } else {
+                (autoPlaceCount + 8) / 9
+            }
+            val requiredRows = if (hasBorder()) {
+                (contentRows + 2).coerceAtLeast(3)
+            } else {
+                contentRows.coerceAtLeast(1)
+            }
+            var requiredSize = requiredRows * 9
+            val minSize = getMinSize().takeIf { it > 0 } ?: 27
+            requiredSize = maxOf(requiredSize, minSize)
+
+            if (highestFixed >= 0) {
+                val fixedSize = ((highestFixed / 9) + 1) * 9
+                requiredSize = maxOf(requiredSize, fixedSize)
+            }
+
+            // Grow until enough free content slots remain after fixed positions
+            val fixedSlots = contentButtons.keys.filter { it in exceptions }.toSet()
+            while (requiredSize <= 54) {
+                val freeSlots = getAvailableContentSlots(requiredSize).count { it !in fixedSlots }
+                if (freeSlots >= autoPlaceCount) break
+                requiredSize += 9
+            }
+
+            return requiredSize.coerceAtMost(54)
+        }
+
         var highest = 0
         for (slot in contentButtons.keys) {
             if (slot > highest) highest = slot
@@ -93,24 +162,82 @@ abstract class BorderedMenu(
         )
 
     /**
-     * Composes the menu layout with both borders and content.
-     * Priority order: Border (lowest) -> Content (highest)
+     * Composes the menu layout with both borders and content. Auto-placed
+     * content only uses inner slots, so the decorative border stays intact.
+     * Explicit [autoPlaceExceptions] retain their requested absolute slots.
      */
     final override fun getButtons(player: Player): MutableMap<Int, Button> {
         val buttons = mutableMapOf<Int, Button>()
 
         // ── ① Get content buttons FIRST to determine size
-        val contentButtons = getContentButtons(player)
+        val suppliedContentButtons = getContentButtons(player)
+        val menuSize = getMenuSize(player)
+        val contentButtons = if (autoPlaceContentButtons) {
+            placeContentButtonsInNextAvailableSlots(
+                suppliedContentButtons,
+                menuSize,
+                getAutoPlaceExceptions(player)
+            )
+        } else {
+            suppliedContentButtons
+        }
 
         // ── ② Border (LOWEST PRIORITY - pure decoration)
         if (hasBorder()) {
-            fillBorder(buttons, getMenuSize(player))
+            fillBorder(buttons, menuSize)
         }
 
-        // ── ③ Content buttons (HIGHEST PRIORITY - overwrites border if slots overlap)
+        // ── ③ Content buttons. Auto-placed entries cannot overlap the border.
         buttons.putAll(contentButtons)
 
         return buttons
+    }
+
+    /**
+     * Places content sequentially into non-border slots. Keys in [exceptions]
+     * keep their absolute inventory slots; remaining buttons fill free content
+     * slots in key order (skipping any slots already taken by exceptions).
+     */
+    private fun placeContentButtonsInNextAvailableSlots(
+        contentButtons: Map<Int, Button>,
+        totalSlots: Int,
+        exceptions: Set<Int>
+    ): MutableMap<Int, Button> {
+        val placedButtons = linkedMapOf<Int, Button>()
+
+        // Fixed positions first — absolute inventory slots
+        contentButtons.forEach { (key, button) ->
+            if (key in exceptions && key in 0 until totalSlots) {
+                placedButtons[key] = button
+            }
+        }
+
+        val reservedSlots = placedButtons.keys
+        val availableSlots = getAvailableContentSlots(totalSlots)
+            .filter { it !in reservedSlots }
+
+        contentButtons.entries
+            .filter { it.key !in exceptions }
+            .sortedBy { it.key }
+            .zip(availableSlots)
+            .forEach { (entry, slot) ->
+                placedButtons[slot] = entry.value
+            }
+
+        return placedButtons
+    }
+
+    private fun getAvailableContentSlots(totalSlots: Int): List<Int> {
+        if (!hasBorder()) return (0 until totalSlots).toList()
+
+        val rows = totalSlots / 9
+        return (0 until totalSlots).filter { slot ->
+            val row = slot / 9
+            val col = slot % 9
+            val isFirstOrLastRow = rows > 1 && (row == 0 || row == rows - 1)
+
+            !isFirstOrLastRow && col != 0 && col != 8
+        }
     }
 
     /**

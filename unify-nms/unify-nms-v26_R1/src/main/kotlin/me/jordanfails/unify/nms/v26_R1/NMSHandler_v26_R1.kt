@@ -2,23 +2,31 @@ package me.jordanfails.unify.nms.v26_R1
 
 import de.tr7zw.nbtapi.NBT
 import io.papermc.paper.adventure.PaperAdventure
+import com.google.common.collect.ArrayListMultimap
 import com.mojang.authlib.GameProfile
+import com.mojang.authlib.properties.Property
+import com.mojang.authlib.properties.PropertyMap
 import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.bossbar.BossBarColor
 import me.jordanfails.unify.bossbar.BossBarStyle
 import me.jordanfails.unify.bossbar.UnifyBossBar
 import me.jordanfails.unify.hologram.HologramLine
 import me.jordanfails.unify.hologram.UnifyHologram
+import me.jordanfails.unify.menu.anvil.AnvilHandle
 import me.jordanfails.unify.nms.NMSHandler
 import me.jordanfails.unify.nms.ServerVersion
 import me.jordanfails.unify.npc.UnifyNPC
 import net.kyori.adventure.text.minimessage.MiniMessage
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
 import net.minecraft.ChatFormatting
+import net.minecraft.core.BlockPos
+import net.minecraft.core.component.DataComponents
 import net.minecraft.network.chat.Component
 import net.minecraft.network.Connection
 import net.minecraft.network.protocol.Packet
 import net.minecraft.network.protocol.PacketFlow
+import net.minecraft.network.protocol.game.ClientboundContainerClosePacket
+import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket
 import net.minecraft.network.protocol.game.ClientboundAddEntityPacket
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket
@@ -37,6 +45,10 @@ import net.minecraft.server.network.ServerGamePacketListenerImpl
 import net.minecraft.world.entity.Entity
 import net.minecraft.world.entity.decoration.ArmorStand
 import net.minecraft.world.entity.item.ItemEntity
+import net.minecraft.world.inventory.AbstractContainerMenu
+import net.minecraft.world.inventory.AnvilMenu
+import net.minecraft.world.inventory.ContainerLevelAccess
+import net.minecraft.world.inventory.MenuType
 import net.minecraft.world.scores.DisplaySlot
 import net.minecraft.world.scores.Objective
 import net.minecraft.world.scores.PlayerTeam
@@ -52,6 +64,7 @@ import org.bukkit.boss.BossBar
 import org.bukkit.craftbukkit.CraftServer
 import org.bukkit.craftbukkit.CraftWorld
 import org.bukkit.craftbukkit.entity.CraftPlayer
+import org.bukkit.craftbukkit.event.CraftEventFactory
 import org.bukkit.craftbukkit.inventory.CraftItemStack
 import org.bukkit.entity.Player
 import org.bukkit.inventory.Inventory
@@ -69,6 +82,7 @@ import java.util.UUID
 @Suppress("unused")
 class NMSHandler_v26_R1 : NMSHandler {
     private val npcPlayers = mutableMapOf<UUID, ServerPlayer>()
+    private val fakePlayers = mutableMapOf<UUID, ServerPlayer>()
     
     override fun sendTitle(
         player: Player,
@@ -181,6 +195,132 @@ class NMSHandler_v26_R1 : NMSHandler {
         return holder == null || holder is Player || holder !is BlockState
     }
 
+    override fun openAnvil(player: Player, title: String): AnvilHandle {
+        val serverPlayer = (player as CraftPlayer).handle
+        handleInventoryClose(serverPlayer)
+
+        val containerId = serverPlayer.nextContainerCounter()
+        val titleComponent = Component.literal(title)
+        val container = AnvilContainerHandle(player, containerId, titleComponent)
+
+        serverPlayer.connection.send(
+            ClientboundOpenScreenPacket(containerId, MenuType.ANVIL, titleComponent)
+        )
+        serverPlayer.containerMenu = container
+        serverPlayer.initMenu(container)
+        return container
+    }
+
+    override fun supportsAnvilTitle(): Boolean = true
+
+    private fun handleInventoryClose(serverPlayer: ServerPlayer) {
+        fireInventoryCloseEvent(serverPlayer)
+        serverPlayer.doCloseContainer()
+    }
+
+    companion object {
+        fun fireInventoryCloseEvent(serverPlayer: ServerPlayer) {
+            try {
+                val reasonClass = Class.forName("org.bukkit.event.inventory.InventoryCloseEvent\$Reason")
+                val method = CraftEventFactory::class.java.getMethod(
+                    "handleInventoryCloseEvent",
+                    net.minecraft.world.entity.player.Player::class.java,
+                    reasonClass,
+                )
+                method.invoke(null, serverPlayer, reasonClass.getField("UNKNOWN").get(null))
+                return
+            } catch (_: ReflectiveOperationException) {
+                // fall through
+            } catch (_: NoSuchMethodError) {
+                // fall through
+            }
+            try {
+                val method = CraftEventFactory::class.java.getMethod(
+                    "handleInventoryCloseEvent",
+                    net.minecraft.world.entity.player.Player::class.java,
+                )
+                method.invoke(null, serverPlayer)
+            } catch (_: ReflectiveOperationException) {
+                // ignore
+            }
+        }
+    }
+
+    private class AnvilContainerHandle(
+        private val bukkitPlayer: Player,
+        private val windowId: Int,
+        guiTitle: Component,
+    ) : AnvilMenu(
+        windowId,
+        (bukkitPlayer as CraftPlayer).handle.inventory,
+        ContainerLevelAccess.create(
+            (bukkitPlayer.world as CraftWorld).handle,
+            BlockPos(0, 0, 0),
+        ),
+    ), AnvilHandle {
+
+        init {
+            this.checkReachable = false
+            setTitle(guiTitle)
+        }
+
+        override val inventory: Inventory
+            get() = bukkitView.topInventory
+
+        override val containerId: Int
+            get() = windowId
+
+        override fun createResult() {
+            val output = getSlot(2)
+            if (!output.hasItem()) {
+                output.set(getSlot(0).item.copy())
+            }
+            cost.set(0)
+            sendAllDataToRemote()
+            broadcastChanges()
+        }
+
+        override fun removed(player: net.minecraft.world.entity.player.Player) {
+            // no drop
+        }
+
+        override fun clearContainer(player: net.minecraft.world.entity.player.Player, container: net.minecraft.world.Container) {
+            // no drop
+        }
+
+        override fun getRenameText(): String = itemName ?: ""
+
+        override fun setRenameText(text: String) {
+            val inputLeft = getSlot(0)
+            if (inputLeft.hasItem()) {
+                inputLeft.item.set(DataComponents.CUSTOM_NAME, Component.literal(text))
+            }
+        }
+
+        override fun close(sendClosePacket: Boolean) {
+            val serverPlayer = (bukkitPlayer as CraftPlayer).handle
+            if (sendClosePacket) {
+                fireInventoryCloseEvent(serverPlayer)
+                serverPlayer.doCloseContainer()
+                serverPlayer.containerMenu = serverPlayer.inventoryMenu
+                serverPlayer.connection.send(ClientboundContainerClosePacket(windowId))
+            } else if (serverPlayer.containerMenu === this) {
+                serverPlayer.containerMenu = serverPlayer.inventoryMenu
+            }
+        }
+
+        override fun updateTitle(title: String, preserveRenameText: Boolean) {
+            val rename = getRenameText()
+            val component = Component.literal(title)
+            (bukkitPlayer as CraftPlayer).handle.connection.send(
+                ClientboundOpenScreenPacket(windowId, MenuType.ANVIL, component)
+            )
+            if (preserveRenameText) {
+                setRenameText(rename)
+            }
+        }
+    }
+
     override fun spawnPlayerNpc(id: String, location: Location, skinType: UnifyNPC.SkinType?, skinValue: String?): UUID? {
         return try {
             val bukkitWorld = location.world ?: return null
@@ -194,16 +334,20 @@ class NMSHandler_v26_R1 : NMSHandler {
                 null
             }
 
-            val profileUuid = when (skinType) {
-                UnifyNPC.SkinType.NAME -> resolvedNamedSkin?.uuid
-                    ?: Bukkit.getOfflinePlayer(requestedName.ifEmpty { id }).uniqueId
-                else -> UUID.randomUUID()
-            }
-            val profileName = sanitizeNpcName(
-                if (skinType == UnifyNPC.SkinType.NAME) requestedName.ifEmpty { id } else id
-            )
-            val profile = GameProfile(profileUuid, profileName)
-            applySkin(profile, skinType, skinValue, resolvedNamedSkin)
+            // NEVER use a real player's UUID or name.
+            // - Same UUID → "Force-added player with duplicate UUID" when they join.
+            // - Same name → vanilla nametag + BELOW_NAME (AscendCore hearts) + nametag plugins
+            //   all key scoreboard entries by name, so the NPC inherits "JordanFails" + "20 ❤"
+            //   and any team update for that player yanks the NPC out of the hidden-nametag team.
+            // Skin is still JordanFails (or whatever) — textures are baked below; display name is not.
+            val profileUuid = npcUuidFor(id)
+            val profileName = "npc" + profileUuid.toString().replace("-", "").take(13)
+
+            // Bake textures into the GameProfile at construction. Paper 26 / modern authlib
+            // make GameProfile.properties final + often immutable — mutating after the fact
+            // (removeAll / field.set) throws and aborts spawn after despawn.
+            val texture = resolveTexture(skinType, skinValue, resolvedNamedSkin)
+            val profile = createGameProfile(profileUuid, profileName, texture)
 
             val npc = ServerPlayer(server, world, profile, ClientInformation.createDefault())
             positionServerPlayer(npc, location)
@@ -211,6 +355,11 @@ class NMSHandler_v26_R1 : NMSHandler {
             npc.noPhysics = true
             npc.isNoGravity = true
             npc.isInvulnerable = true
+
+            // Despawn any prior body for this NPC id (same deterministic uuid).
+            npcPlayers.remove(profileUuid)?.let { old ->
+                runCatching { old.remove(Entity.RemovalReason.DISCARDED) }
+            }
 
             world.addNewPlayer(npc)
             val bukkitEntity = npc.bukkitEntity
@@ -277,6 +426,20 @@ class NMSHandler_v26_R1 : NMSHandler {
         sendPlayerNpcSpawnPackets(viewer, npc)
         scheduleHidePlayerNpcFromTab(viewer, npcUuid, 20L)
     }
+    private fun sendEntityPacket(viewer: Player, className: String, entity: ServerPlayer, vararg extras: Any): Boolean {
+        return try {
+            val packetClass = Class.forName(className)
+            val args = arrayOf(entity, *extras)
+            val constructor = packetClass.constructors.firstOrNull { candidate ->
+                candidate.parameterTypes.size == args.size
+            } ?: return false
+            val packet = constructor.newInstance(*args) as? Packet<*> ?: return false
+            (viewer as CraftPlayer).handle.connection.send(packet)
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
 
     private fun sendPlayerNpcSpawnPackets(viewer: Player, npc: ServerPlayer) {
         try {
@@ -310,12 +473,21 @@ class NMSHandler_v26_R1 : NMSHandler {
     }
 
     private fun sendHideNpcNametag(connection: net.minecraft.server.network.ServerGamePacketListenerImpl, npc: ServerPlayer) {
-        val teamName = "npc_nt_${npc.uuid.toString().take(8)}"
+        // Stable per-NPC team; profile name is synthetic (npc…) so nametag plugins won't
+        // re-add this entry to a visible team under the skin owner's real name.
+        val teamName = "unpc_${npc.uuid.toString().replace("-", "").take(12)}"
         val dummyScoreboard = Scoreboard()
         val team = PlayerTeam(dummyScoreboard, teamName)
         team.nameTagVisibility = Team.Visibility.NEVER
+        team.collisionRule = Team.CollisionRule.NEVER
         connection.send(ClientboundSetPlayerTeamPacket.createAddOrModifyPacket(team, true))
-        connection.send(ClientboundSetPlayerTeamPacket.createPlayerPacket(team, npc.scoreboardName, ClientboundSetPlayerTeamPacket.Action.ADD))
+        connection.send(
+            ClientboundSetPlayerTeamPacket.createPlayerPacket(
+                team,
+                npc.scoreboardName,
+                ClientboundSetPlayerTeamPacket.Action.ADD,
+            ),
+        )
     }
 
     private fun createPlayerInfoAddPacket(npc: ServerPlayer): Packet<*>? {
@@ -344,38 +516,34 @@ class NMSHandler_v26_R1 : NMSHandler {
         return raw.replace(Regex("[^A-Za-z0-9_]"), "_").take(16).ifEmpty { "npc" }
     }
 
-    private fun applySkin(
-        profile: GameProfile,
+    /**
+     * Resolve skin texture data without mutating a GameProfile.
+     * Textures are baked into the profile at construction — see [createGameProfile].
+     */
+    private fun resolveTexture(
         skinType: UnifyNPC.SkinType?,
         skinValue: String?,
         resolvedNamedSkin: ResolvedNamedSkin? = null,
-    ) {
-        if (skinType == null || skinValue.isNullOrBlank()) {
-            return
-        }
+    ): TextureProperty? {
+        if (skinType == null || skinValue.isNullOrBlank()) return null
 
-        when (skinType) {
+        return when (skinType) {
             UnifyNPC.SkinType.NAME -> {
-                resolvedNamedSkin?.let { resolved ->
-                    setProfileTexture(profile, resolved.textureValue, resolved.textureSignature)
-                    return
-                }
-                val onlineSource = Bukkit.getPlayerExact(skinValue) as? CraftPlayer
-                if (onlineSource != null) {
-                    val sourceProfile = onlineSource.handle.gameProfile
-                    getProfileTextures(sourceProfile).forEach { texture ->
-                        setProfileTexture(profile, texture.value, texture.signature)
+                resolvedNamedSkin?.let {
+                    TextureProperty(it.textureValue, it.textureSignature)
+                } ?: run {
+                    val onlineSource = Bukkit.getPlayerExact(skinValue) as? CraftPlayer
+                    onlineSource?.let {
+                        getProfileTextures(it.handle.gameProfile).firstOrNull()
                     }
                 }
             }
             UnifyNPC.SkinType.URL -> {
                 val json = "{\"textures\":{\"SKIN\":{\"url\":\"$skinValue\"}}}"
                 val encoded = Base64.getEncoder().encodeToString(json.toByteArray(StandardCharsets.UTF_8))
-                setProfileTexture(profile, encoded, null)
+                TextureProperty(encoded, null)
             }
-            UnifyNPC.SkinType.BASE64 -> {
-                setProfileTexture(profile, skinValue, null)
-            }
+            UnifyNPC.SkinType.BASE64 -> TextureProperty(skinValue, null)
         }
     }
 
@@ -384,6 +552,10 @@ class NMSHandler_v26_R1 : NMSHandler {
         val textureValue: String,
         val textureSignature: String?,
     )
+
+    /** Stable UUID per NPC id — never a real player's Mojang UUID. */
+    private fun npcUuidFor(id: String): UUID =
+        UUID.nameUUIDFromBytes("unify-npc:$id".toByteArray(StandardCharsets.UTF_8))
 
     private fun resolveNamedSkin(name: String): ResolvedNamedSkin? {
         val onlineSource = Bukkit.getPlayerExact(name) as? CraftPlayer
@@ -468,14 +640,26 @@ class NMSHandler_v26_R1 : NMSHandler {
             }.getOrNull()
     }
 
-    private fun setProfileTexture(profile: GameProfile, value: String, signature: String?) {
-        val properties = getProfileProperties(profile) ?: return
-        removeTextureProperties(properties)
-        val property = createTextureProperty(value, signature) ?: return
-        runCatching {
-            properties.javaClass.getMethod("put", Any::class.java, Any::class.java)
-                .invoke(properties, "textures", property)
+    /**
+     * Build a [GameProfile] with optional textures already present.
+     *
+     * Paper 26 / modern authlib make `GameProfile.properties` **final** and often back it
+     * with an immutable multimap — post-construction mutation (removeAll / Field.set) fails.
+     * Baking textures into the constructor is the only reliable path.
+     */
+    private fun createGameProfile(uuid: UUID, name: String, texture: TextureProperty?): GameProfile {
+        val multimap = ArrayListMultimap.create<String, Property>()
+        if (texture != null && texture.value.isNotBlank()) {
+            multimap.put(
+                "textures",
+                if (texture.signature.isNullOrBlank()) {
+                    Property("textures", texture.value)
+                } else {
+                    Property("textures", texture.value, texture.signature)
+                },
+            )
         }
+        return GameProfile(uuid, name, PropertyMap(multimap))
     }
 
     private fun getProfileTextures(profile: GameProfile): List<TextureProperty> {

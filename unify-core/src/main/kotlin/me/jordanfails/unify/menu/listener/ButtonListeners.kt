@@ -356,13 +356,16 @@ object ButtonListeners : Listener {
 
                 event.cursor = takenItem
                 inv.setItem(slot, remaining)
-                
+
                 if (remaining == null) {
                     menu.handleItemRemoval(player, slot, currentItem)
                 } else {
+                    // Partial pickup still changes the slot — fire onSlotChange so
+                    // menus that sync external state (e.g. invsee) stay correct.
                     menu.setSlotItem(slot, remaining)
+                    menu.onSlotChange(player, slot, currentItem, remaining)
                 }
-                
+
                 Bukkit.getScheduler().scheduleSyncDelayedTask(UnifyCore.instance, {
                     player.updateInventory()
                 }, 1L)

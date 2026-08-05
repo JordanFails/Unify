@@ -30,7 +30,9 @@ val nms_v1_16_R3 = file("unify-nms/unify-nms-v1_16_R3/build/libs/unify-nms-v1_16
 // Modern JARs (Java 17+ compatible: 1.20, 1.21, 26)
 val modernCoreJar = file("unify-core/build/libs/Unify-1.0-SNAPSHOT-modern.jar")
 val nms_v1_20_R4 = file("unify-nms/unify-nms-v1_20_R4/build/libs/unify-nms-v1_20_R4-1.0-SNAPSHOT.jar")
-val nms_v1_21_R1 = file("unify-nms/unify-nms-v1_21_R1/build/libs/unify-nms-v1_21_R1-1.0-SNAPSHOT-dev.jar")
+// Must match what the module's `jar` task actually produces. This pointed at a stale
+// `-dev` artifact, so every change to the 1.21 handler was silently left out of the bundle.
+val nms_v1_21_R1 = file("unify-nms/unify-nms-v1_21_R1/build/libs/unify-nms-v1_21_R1-1.0-SNAPSHOT.jar")
 val nms_v26_R1 = file("unify-nms/unify-nms-v26_R1/build/libs/unify-nms-v26_R1-1.0-SNAPSHOT.jar")
 
 // Task to build legacy modules (Java 8)
