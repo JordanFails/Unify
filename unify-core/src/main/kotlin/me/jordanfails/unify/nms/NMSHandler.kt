@@ -3,8 +3,13 @@ package me.jordanfails.unify.nms
 import me.jordanfails.unify.bossbar.UnifyBossBar
 import me.jordanfails.unify.hologram.UnifyHologram
 import me.jordanfails.unify.menu.anvil.AnvilHandle
-import me.jordanfails.unify.npc.UnifyNPC
+import me.jordanfails.unify.npc.BukkitNpcBody
+import me.jordanfails.unify.npc.NPCEquipmentSlot
+import me.jordanfails.unify.npc.NPCPose
+import me.jordanfails.unify.npc.NPCSkin
+import me.jordanfails.unify.npc.NPCSpawnSpec
 import org.bukkit.Location
+import org.bukkit.entity.EntityType
 import org.bukkit.entity.Player
 import org.bukkit.inventory.Inventory
 import org.bukkit.inventory.ItemStack
@@ -169,11 +174,78 @@ interface NMSHandler {
      */
     fun sendTabHeaderFooter(player: Player, header: String, footer: String)
 
-    // --- Player NPC API (optional, version-specific) ---
-    fun spawnPlayerNpc(id: String, location: Location, skinType: UnifyNPC.SkinType?, skinValue: String?): UUID? = null
-    fun despawnPlayerNpc(uuid: UUID) { }
-    fun teleportPlayerNpc(uuid: UUID, location: Location): Boolean = false
-    fun hidePlayerNpcFromTab(viewer: Player, npcUuid: UUID) { }
-    fun showPlayerNpcToViewer(viewer: Player, npcUuid: UUID) { }
+    // --- NPC API ---
+    //
+    // Entity-generic: an NPC body may be any entity type, not only a player. Every method takes
+    // the body's entity UUID, which changes on each respawn — callers hold the NPC, not the body.
+    //
+    // Methods return false (or null) when the running version cannot do what was asked, rather
+    // than throwing. Callers degrade: a pose that does not exist on 1.8 leaves the NPC standing,
+    // it does not fail the spawn.
 
+    /**
+     * Creates an NPC body and returns its entity UUID, or null if the type could not be spawned.
+     *
+     * Implementations must add the entity to the world as an ordinary entity — never to the
+     * server's player list, even for player bodies. A body in the player list shows up in
+     * [org.bukkit.Bukkit.getOnlinePlayers], enters the login pipeline, and forces every consumer
+     * of the player list to filter it back out.
+     *
+     * The caller has already pinned the target chunk, so implementations need not keep the entity
+     * alive themselves.
+     */
+    fun spawnNpcEntity(spec: NPCSpawnSpec): UUID? = BukkitNpcBody.spawn(spec)
+
+    /** Removes the body. No-op for an unknown UUID. */
+    fun despawnNpcEntity(entityUuid: UUID) = BukkitNpcBody.despawn(entityUuid)
+
+    /** Moves the body within its current world. Returns false for cross-world moves. */
+    fun teleportNpcEntity(entityUuid: UUID, location: Location): Boolean =
+        BukkitNpcBody.teleport(entityUuid, location)
+
+    /**
+     * Swaps a player body's skin without recreating the entity.
+     *
+     * The skin lives on an immutable GameProfile, so implementations replace the profile and
+     * re-send the entity to its current viewers. Returns false when that is not possible — the
+     * caller then rebuilds the NPC, which is correct but more disruptive. Non-player bodies
+     * return false.
+     */
+    fun setNpcSkin(entityUuid: UUID, skin: NPCSkin?): Boolean = false
+
+    /**
+     * Sets the body's nameplate. [name] is already colour-translated; null clears it.
+     *
+     * Player bodies need a scoreboard team rather than a custom name, since vanilla always renders
+     * a player's profile name above its head.
+     */
+    fun setNpcName(entityUuid: UUID, name: String?, visible: Boolean): Boolean =
+        BukkitNpcBody.setName(entityUuid, name, visible)
+
+    /** Sets one equipment slot, or clears it when [item] is null. */
+    fun setNpcEquipment(entityUuid: UUID, slot: NPCEquipmentSlot, item: ItemStack?): Boolean =
+        BukkitNpcBody.setEquipment(entityUuid, slot, item)
+
+    /**
+     * Points the body's head and body at [yaw]/[pitch], in degrees.
+     *
+     * Called at the trait tick rate while look-close is active, so implementations should send
+     * rotation packets directly rather than going through a Bukkit teleport.
+     */
+    fun setNpcLook(entityUuid: UUID, yaw: Float, pitch: Float): Boolean =
+        BukkitNpcBody.setLook(entityUuid, yaw, pitch)
+
+    /** Puts the body into [pose]. Only called for poses [supportsNpcPose] accepted. */
+    fun setNpcPose(entityUuid: UUID, pose: NPCPose): Boolean = BukkitNpcBody.setPose(entityUuid, pose)
+
+    /** Whether this version can render [pose]. Standing always works. */
+    fun supportsNpcPose(pose: NPCPose): Boolean = pose == NPCPose.STANDING || pose == NPCPose.SNEAKING
+
+    /**
+     * Whether this version can spawn an NPC body of [type].
+     *
+     * Defaults to every spawnable non-player type. Modules that implement player bodies override
+     * this to add [EntityType.PLAYER].
+     */
+    fun supportsNpcEntityType(type: EntityType): Boolean = BukkitNpcBody.supports(type)
 }

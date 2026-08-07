@@ -12,7 +12,6 @@ import me.jordanfails.unify.hologram.UnifyHologram
 import me.jordanfails.unify.menu.anvil.AnvilHandle
 import me.jordanfails.unify.nms.NMSHandler
 import me.jordanfails.unify.nms.ServerVersion
-import me.jordanfails.unify.npc.UnifyNPC
 import net.kyori.adventure.text.minimessage.MiniMessage
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
 import net.minecraft.ChatFormatting
@@ -67,7 +66,6 @@ import java.util.UUID
 
 @Suppress("unused")
 class NMSHandler_v1_20_R4 : NMSHandler {
-    private val npcPlayers = mutableMapOf<UUID, ServerPlayer>()
     
     override fun sendTitle(
         player: Player,
@@ -313,137 +311,14 @@ class NMSHandler_v1_20_R4 : NMSHandler {
         }
     }
 
-    override fun spawnPlayerNpc(id: String, location: Location, skinType: UnifyNPC.SkinType?, skinValue: String?): UUID? {
-        return try {
-            val bukkitWorld = location.world ?: return null
-            val world = (bukkitWorld as CraftWorld).handle
-            val server = (Bukkit.getServer() as CraftServer).server
 
-            val profileUuid = UUID.randomUUID()
-            val profileName = sanitizeNpcName(if (skinType == UnifyNPC.SkinType.NAME) skinValue else id)
-            val profile = GameProfile(profileUuid, profileName)
-            applySkin(profile, skinType, skinValue)
 
-            val npc = ServerPlayer(server, world, profile, ClientInformation.createDefault())
-            npc.absMoveTo(location.x, location.y, location.z, location.yaw, location.pitch)
-            attachFakeConnection(server, npc, profile)
-            npc.noPhysics = true
-            npc.isNoGravity = true
-            npc.isInvulnerable = true
 
-            world.addNewPlayer(npc)
-            val bukkitEntity = npc.bukkitEntity
-            bukkitEntity.isCollidable = false
-            bukkitEntity.canPickupItems = false
-            bukkitEntity.isSilent = true
-            bukkitEntity.isInvulnerable = true
 
-            npcPlayers[profileUuid] = npc
-            Bukkit.getOnlinePlayers().forEach { viewer ->
-                sendPlayerNpcSpawnPackets(viewer, npc)
-                scheduleHidePlayerNpcFromTab(viewer, profileUuid, 20L)
-            }
-            profileUuid
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
-    }
 
-    override fun despawnPlayerNpc(uuid: UUID) {
-        val npc = npcPlayers.remove(uuid) ?: return
-        try {
-            npc.remove(Entity.RemovalReason.DISCARDED)
-            Bukkit.getOnlinePlayers().forEach { viewer ->
-                val craftViewer = viewer as CraftPlayer
-                craftViewer.handle.connection.send(ClientboundPlayerInfoRemovePacket(listOf(uuid)))
-                craftViewer.handle.connection.send(ClientboundRemoveEntitiesPacket(npc.id))
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
 
-    override fun teleportPlayerNpc(uuid: UUID, location: Location): Boolean {
-        val npc = npcPlayers[uuid] ?: return false
-        return try {
-            npc.absMoveTo(location.x, location.y, location.z, location.yaw, location.pitch)
-            npc.noPhysics = true
-            npc.isNoGravity = true
-            true
-        } catch (e: Exception) {
-            e.printStackTrace()
-            false
-        }
-    }
 
-    override fun hidePlayerNpcFromTab(viewer: Player, npcUuid: UUID) {
-        try {
-            (viewer as CraftPlayer).handle.connection.send(ClientboundPlayerInfoRemovePacket(listOf(npcUuid)))
-        } catch (_: Exception) {
-        }
-    }
 
-    private fun scheduleHidePlayerNpcFromTab(viewer: Player, npcUuid: UUID, delayTicks: Long) {
-        Bukkit.getScheduler().runTaskLater(UnifyCore.instance, Runnable {
-            hidePlayerNpcFromTab(viewer, npcUuid)
-        }, delayTicks)
-    }
-
-    override fun showPlayerNpcToViewer(viewer: Player, npcUuid: UUID) {
-        val npc = npcPlayers[npcUuid] ?: return
-        sendPlayerNpcSpawnPackets(viewer, npc)
-        scheduleHidePlayerNpcFromTab(viewer, npcUuid, 20L)
-    }
-
-    private fun sendPlayerNpcSpawnPackets(viewer: Player, npc: ServerPlayer) {
-        try {
-            val craftViewer = viewer as CraftPlayer
-            val connection = craftViewer.handle.connection
-            createPlayerInfoAddPacket(npc)?.let { connection.send(it) }
-
-            val addPacket = ClientboundAddEntityPacket(npc)
-            connection.send(addPacket)
-
-            val dataValues = npc.entityData.packAll()
-            if (dataValues != null) {
-                connection.send(ClientboundSetEntityDataPacket(npc.id, dataValues))
-            }
-
-            sendHideNpcNametag(connection, npc)
-        } catch (_: Exception) {
-        }
-    }
-
-    private fun sendHideNpcNametag(connection: ServerGamePacketListenerImpl, npc: ServerPlayer) {
-        val teamName = "npc_nt_${npc.uuid.toString().take(8)}"
-        val dummyScoreboard = Scoreboard()
-        val team = PlayerTeam(dummyScoreboard, teamName)
-        team.nameTagVisibility = Team.Visibility.NEVER
-        connection.send(ClientboundSetPlayerTeamPacket.createAddOrModifyPacket(team, true))
-        connection.send(ClientboundSetPlayerTeamPacket.createPlayerPacket(team, npc.scoreboardName, ClientboundSetPlayerTeamPacket.Action.ADD))
-    }
-
-    private fun createPlayerInfoAddPacket(npc: ServerPlayer): Packet<*>? {
-        return runCatching {
-            val packetClass = Class.forName("net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket")
-            val createInitializing = packetClass.methods.firstOrNull {
-                it.name == "createPlayerInitializing" && it.parameterTypes.size == 1
-            }
-            if (createInitializing != null) {
-                return@runCatching createInitializing.invoke(null, listOf(npc)) as? Packet<*>
-            }
-
-            val actionClass = Class.forName("net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket\$Action")
-            val addAction = actionClass.getMethod("valueOf", String::class.java).invoke(null, "ADD_PLAYER") as Enum<*>
-            val actions = java.util.EnumSet::class.java.getMethod("of", Enum::class.java).invoke(null, addAction)
-            val ctor = packetClass.constructors.firstOrNull { constructor ->
-                val types = constructor.parameterTypes
-                types.size == 2 && types[0].isAssignableFrom(actions.javaClass)
-            } ?: return@runCatching null
-            ctor.newInstance(actions, listOf(npc)) as? Packet<*>
-        }.getOrNull()
-    }
 
     private fun attachFakeConnection(
         server: net.minecraft.server.MinecraftServer,
@@ -461,34 +336,7 @@ class NMSHandler_v1_20_R4 : NMSHandler {
         npc.connection = fakeListener
     }
 
-    private fun sanitizeNpcName(source: String?): String {
-        val raw = (source ?: "npc").trim().ifEmpty { "npc" }
-        return raw.replace(Regex("[^A-Za-z0-9_]"), "_").take(16).ifEmpty { "npc" }
-    }
 
-    private fun applySkin(profile: GameProfile, skinType: UnifyNPC.SkinType?, skinValue: String?) {
-        if (skinType == null || skinValue.isNullOrBlank()) {
-            return
-        }
-
-        when (skinType) {
-            UnifyNPC.SkinType.NAME -> {
-                val onlineSource = Bukkit.getPlayerExact(skinValue) as? CraftPlayer ?: return
-                val sourceProfile = onlineSource.handle.gameProfile
-                sourceProfile.properties.get("textures").forEach { texture ->
-                    profile.properties.put("textures", Property("textures", texture.value, texture.signature))
-                }
-            }
-            UnifyNPC.SkinType.URL -> {
-                val json = "{\"textures\":{\"SKIN\":{\"url\":\"$skinValue\"}}}"
-                val encoded = Base64.getEncoder().encodeToString(json.toByteArray(StandardCharsets.UTF_8))
-                profile.properties.put("textures", Property("textures", encoded))
-            }
-            UnifyNPC.SkinType.BASE64 -> {
-                profile.properties.put("textures", Property("textures", skinValue))
-            }
-        }
-    }
 
     private fun getTeamName(target: Player): String {
         return "nt_${target.name.take(12)}"

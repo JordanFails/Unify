@@ -3,6 +3,7 @@ package me.jordanfails.unify.scoreboard
 import com.google.common.primitives.Ints
 import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.config.UnifyConfig
+import me.jordanfails.unify.npc.NPCRegistry
 import me.jordanfails.unify.scoreboard.thread.ScoreboardThread
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
@@ -46,12 +47,12 @@ object ScoreboardHandler {
         }
 
         refreshTask = Bukkit.getScheduler().runTaskTimerAsynchronously(UnifyCore.instance, Runnable {
-            for (player in Bukkit.getOnlinePlayers()) {
+            for (player in NPCRegistry.realOnlinePlayers()) {
                 reloadPlayer(player)
             }
         }, 20L, updateInterval.toLong())
 
-        Bukkit.getOnlinePlayers().forEach { reloadPlayer(it) }
+        NPCRegistry.realOnlinePlayers().forEach { reloadPlayer(it) }
     }
 
     fun registerProvider(newProvider: ScoreboardProvider) {
@@ -60,6 +61,7 @@ object ScoreboardHandler {
     }
 
     fun reloadPlayer(player: Player) {
+        if (NPCRegistry.isNpc(player)) return
         val update = ScoreboardUpdate(player)
 
         if (async) {
@@ -71,6 +73,7 @@ object ScoreboardHandler {
 
     internal fun applyUpdate(scoreboardUpdate: ScoreboardUpdate) {
         val player = Bukkit.getPlayerExact(scoreboardUpdate.player.name) ?: return
+        if (NPCRegistry.isNpc(player)) return
 
         var provided: ScoreboardInfo? = null
         var providerIndex = 0

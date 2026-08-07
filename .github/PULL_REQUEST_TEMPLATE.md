@@ -20,7 +20,7 @@ If yes, paste prompts used: <!-- -->
 ## Testing
 
 - [ ] Tests pass locally
-- [ ] Manual testing done
+- [ ] Manual testing done?
 
 ## Checklist
 

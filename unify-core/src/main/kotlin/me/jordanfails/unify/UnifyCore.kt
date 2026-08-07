@@ -19,7 +19,7 @@ import me.jordanfails.unify.commands.PingCommand
 import me.jordanfails.unify.commands.UnifyAdminCommand
 import me.jordanfails.unify.hologram.HologramManager
 import me.jordanfails.unify.hologram.command.HologramCommand
-import me.jordanfails.unify.npc.NPCManager
+import me.jordanfails.unify.npc.NPCRegistry
 import me.jordanfails.unify.npc.command.NPCCommand
 import me.jordanfails.unify.visibility.VisibilityHandler
 import me.jordanfails.unify.visibility.VisibilityListeners
@@ -54,7 +54,7 @@ class UnifyCore : JavaPlugin() {
     }
 
     override fun onDisable() {
-        NPCManager.disable()
+        NPCRegistry.disable()
         HologramManager.disable()
     }
 
@@ -84,7 +84,7 @@ class UnifyCore : JavaPlugin() {
     private fun setupCommands() {
         listOf(
             HologramCommand(),
-//            NPCCommand(),
+            NPCCommand(),
             PingCommand(),
             UnifyAdminCommand(),
         ).forEach { commandManager.registerCommand(it) }
@@ -95,7 +95,7 @@ class UnifyCore : JavaPlugin() {
     }
 
     private fun setupNPCs() {
-        NPCManager.enable(this)
+        NPCRegistry.enable(this)
     }
 
     private fun setupScoreboards() {

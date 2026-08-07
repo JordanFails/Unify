@@ -10,7 +10,6 @@ import me.jordanfails.unify.hologram.UnifyHologram
 import me.jordanfails.unify.menu.anvil.AnvilHandle
 import me.jordanfails.unify.nms.NMSHandler
 import me.jordanfails.unify.nms.ServerVersion
-import me.jordanfails.unify.npc.UnifyNPC
 import me.jordanfails.unify.utils.CC
 import net.minecraft.server.v1_8_R3.*
 import org.bukkit.Bukkit
@@ -31,7 +30,6 @@ import kotlin.math.sin
 
 @Suppress("unused")
 class NMSHandler_v1_8_R3 : NMSHandler {
-    private val npcPlayers = mutableMapOf<UUID, EntityPlayer>()
 
     override fun sendTitle(player: Player, title: String, subtitle: String?, fadeIn: Int, stay: Int, fadeOut: Int) {
         val connection = (player as CraftPlayer).handle.playerConnection
@@ -252,137 +250,14 @@ class NMSHandler_v1_8_R3 : NMSHandler {
         }
     }
 
-    override fun spawnPlayerNpc(id: String, location: Location, skinType: UnifyNPC.SkinType?, skinValue: String?): UUID? {
-        return try {
-            val world = (location.world as? CraftWorld)?.handle ?: return null
-            val server = MinecraftServer.getServer()
-            val profileUuid = UUID.randomUUID()
-            val profile = GameProfile(profileUuid, sanitizeNpcName(if (skinType == UnifyNPC.SkinType.NAME) skinValue else id))
-            applySkin(profile, skinType, skinValue)
 
-            val npc = EntityPlayer(server, world, profile, PlayerInteractManager(world))
-            npc.setLocation(location.x, location.y, location.z, location.yaw, location.pitch)
-            npc.noclip = true
-            world.addEntity(npc)
 
-            npcPlayers[profileUuid] = npc
-            Bukkit.getOnlinePlayers().forEach { viewer ->
-                sendPlayerNpcSpawnPackets(viewer, npc)
-                Bukkit.getScheduler().runTaskLater(UnifyCore.instance, Runnable {
-                    hidePlayerNpcFromTab(viewer, profileUuid)
-                }, 20L)
-            }
-            profileUuid
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
-    }
 
-    override fun despawnPlayerNpc(uuid: UUID) {
-        val npc = npcPlayers.remove(uuid) ?: return
-        try {
-            npc.world.removeEntity(npc)
-            val destroy = PacketPlayOutEntityDestroy(npc.id)
-            Bukkit.getOnlinePlayers().forEach { viewer ->
-                val connection = (viewer as CraftPlayer).handle.playerConnection
-                connection.sendPacket(PacketPlayOutPlayerInfo(PacketPlayOutPlayerInfo.EnumPlayerInfoAction.REMOVE_PLAYER, npc))
-                connection.sendPacket(destroy)
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
 
-    override fun teleportPlayerNpc(uuid: UUID, location: Location): Boolean {
-        val npc = npcPlayers[uuid] ?: return false
-        return try {
-            npc.setLocation(location.x, location.y, location.z, location.yaw, location.pitch)
-            npc.noclip = true
-            true
-        } catch (e: Exception) {
-            e.printStackTrace()
-            false
-        }
-    }
 
-    override fun hidePlayerNpcFromTab(viewer: Player, npcUuid: UUID) {
-        val npc = npcPlayers[npcUuid] ?: return
-        try {
-            (viewer as CraftPlayer).handle.playerConnection.sendPacket(
-                PacketPlayOutPlayerInfo(PacketPlayOutPlayerInfo.EnumPlayerInfoAction.REMOVE_PLAYER, npc)
-            )
-        } catch (_: Exception) {
-        }
-    }
 
-    private fun sendPlayerNpcSpawnPackets(viewer: Player, npc: EntityPlayer) {
-        try {
-            val connection = (viewer as CraftPlayer).handle.playerConnection
-            connection.sendPacket(
-                PacketPlayOutPlayerInfo(PacketPlayOutPlayerInfo.EnumPlayerInfoAction.ADD_PLAYER, npc)
-            )
-            connection.sendPacket(PacketPlayOutNamedEntitySpawn(npc))
-            connection.sendPacket(PacketPlayOutEntityMetadata(npc.id, npc.dataWatcher, true))
-            sendHideNpcNametag(connection, npc)
-        } catch (_: Exception) {
-        }
-    }
 
-    override fun showPlayerNpcToViewer(viewer: Player, npcUuid: UUID) {
-        val npc = npcPlayers[npcUuid] ?: return
-        sendPlayerNpcSpawnPackets(viewer, npc)
-        Bukkit.getScheduler().runTaskLater(UnifyCore.instance, Runnable {
-            hidePlayerNpcFromTab(viewer, npcUuid)
-        }, 20L)
-    }
 
-    private fun sendHideNpcNametag(connection: PlayerConnection, npc: EntityPlayer) {
-        val teamName = "npc_nt_${npc.uniqueID.toString().take(8)}"
-        val packet = PacketPlayOutScoreboardTeam()
-        setField(packet, "a", teamName)
-        setField(packet, "b", teamName)
-        setField(packet, "c", "")
-        setField(packet, "d", "")
-        setField(packet, "e", "never")
-        setField(packet, "f", 0)
-        setField(packet, "h", 0)
-        setField(packet, "i", 0)
-        connection.sendPacket(packet)
-        val addPacket = PacketPlayOutScoreboardTeam()
-        setField(addPacket, "a", teamName)
-        @Suppress("UNCHECKED_CAST")
-        val members = getField(addPacket, "g") as? MutableCollection<String> ?: return
-        members.add(npc.getName())
-        setField(addPacket, "h", 3)
-        connection.sendPacket(addPacket)
-    }
-
-    private fun sanitizeNpcName(source: String?): String {
-        val raw = (source ?: "npc").trim().ifEmpty { "npc" }
-        return raw.replace(Regex("[^A-Za-z0-9_]"), "_").take(16).ifEmpty { "npc" }
-    }
-
-    private fun applySkin(profile: GameProfile, skinType: UnifyNPC.SkinType?, skinValue: String?) {
-        if (skinType == null || skinValue.isNullOrBlank()) return
-        when (skinType) {
-            UnifyNPC.SkinType.NAME -> {
-                val source = Bukkit.getPlayerExact(skinValue) as? CraftPlayer ?: return
-                val sourceProfile = source.profile
-                sourceProfile.properties.get("textures").forEach { texture ->
-                    profile.properties.put("textures", Property("textures", texture.value, texture.signature))
-                }
-            }
-            UnifyNPC.SkinType.URL -> {
-                val json = "{\"textures\":{\"SKIN\":{\"url\":\"$skinValue\"}}}"
-                val encoded = Base64.getEncoder().encodeToString(json.toByteArray(StandardCharsets.UTF_8))
-                profile.properties.put("textures", Property("textures", encoded))
-            }
-            UnifyNPC.SkinType.BASE64 -> {
-                profile.properties.put("textures", Property("textures", skinValue))
-            }
-        }
-    }
 
     private fun getTeamName(target: Player): String {
         return "nt_${target.name.take(12)}"

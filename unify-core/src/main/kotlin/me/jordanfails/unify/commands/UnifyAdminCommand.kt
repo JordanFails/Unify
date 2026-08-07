@@ -16,7 +16,7 @@ import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.hologram.HologramManager
 import me.jordanfails.unify.nametag.NametagHandler
 import me.jordanfails.unify.nms.ServerVersion
-import me.jordanfails.unify.npc.NPCManager
+import me.jordanfails.unify.npc.NPCRegistry
 import me.jordanfails.unify.scoreboard.ScoreboardHandler
 import me.jordanfails.unify.scoreboard.menu.ScoreboardsMenu
 import me.jordanfails.unify.tab.TabHandler
@@ -67,7 +67,7 @@ class UnifyAdminCommand : BaseCommand() {
                 TabHandler.reloadAll()
                 NametagHandler.reloadAll()
                 HologramManager.load()
-                NPCManager.load()
+                NPCRegistry.load()
 
                 for (player in Bukkit.getOnlinePlayers()) {
                     VisibilityHandler.update(player)
@@ -96,7 +96,7 @@ class UnifyAdminCommand : BaseCommand() {
                 sender.sendMessage(CC.translate("&aReloaded holograms from disk."))
             }
             "npc", "npcs" -> {
-                NPCManager.load()
+                NPCRegistry.load()
                 sender.sendMessage(CC.translate("&aReloaded NPCs from disk."))
             }
             else -> {
@@ -130,7 +130,7 @@ class UnifyAdminCommand : BaseCommand() {
         sender.sendMessage(CC.translate("&7Scoreboard: &f${if (ScoreboardHandler.isEnabled()) "enabled" else "disabled"} &7(${ScoreboardHandler.updateInterval}t, providers=${ScoreboardHandler.providerCount()})"))
         sender.sendMessage(CC.translate("&7Tab: &f${if (TabHandler.isEnabled()) "enabled" else "disabled"} &7(${TabHandler.updateInterval}t, providers=${TabHandler.providerCount()})"))
         sender.sendMessage(CC.translate("&7Nametags: &f${if (NametagHandler.isEnabled()) "enabled" else "disabled"} &7(${NametagHandler.updateInterval}t, providers=${NametagHandler.providerCount()})"))
-        sender.sendMessage(CC.translate("&7Loaded NPCs: &f${NPCManager.getIds().size}"))
+        sender.sendMessage(CC.translate("&7Loaded NPCs: &f${NPCRegistry.getIds().size}"))
         sender.sendMessage(CC.translate("&7Loaded Holograms: &f${HologramManager.getIds().size}"))
 
         val viewer = sender as? Player

@@ -1,351 +1,325 @@
 package me.jordanfails.unify.npc
 
 import me.jordanfails.unify.UnifyCore
-import me.jordanfails.unify.hologram.HologramLine
-import me.jordanfails.unify.hologram.UnifyHologram
 import me.jordanfails.unify.nms.NMSHandlerFactory
-import me.jordanfails.unify.utils.SkullBuilder
+import me.jordanfails.unify.npc.event.NPCDespawnEvent
+import me.jordanfails.unify.npc.event.NPCLeftClickEvent
+import me.jordanfails.unify.npc.event.NPCRightClickEvent
+import me.jordanfails.unify.npc.event.NPCSpawnEvent
+import me.jordanfails.unify.npc.trait.NameTrait
+import me.jordanfails.unify.npc.trait.PoseTrait
+import me.jordanfails.unify.npc.trait.SkinTrait
+import me.jordanfails.unify.npc.trait.Trait
+import me.jordanfails.unify.npc.trait.TraitRegistry
 import org.bukkit.Bukkit
 import org.bukkit.Location
 import org.bukkit.entity.Entity
-import org.bukkit.entity.LivingEntity
+import org.bukkit.entity.EntityType
 import org.bukkit.entity.Player
-import org.bukkit.inventory.ItemStack
-import org.bukkit.metadata.FixedMetadataValue
-import org.bukkit.potion.PotionEffect
-import org.bukkit.potion.PotionEffectType
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
+/**
+ * A single NPC: an identity, a place in the world, and a bag of [Trait]s that give it behaviour.
+ *
+ * The NPC outlives its body. [uuid] and [id] are stable for the NPC's whole persisted life, while
+ * [entityUuid] points at whichever entity currently represents it and changes on every respawn.
+ * Anything that needs to remember an NPC across a restart must key on [id], never on [entityUuid].
+ */
 class UnifyNPC internal constructor(
     val id: String,
+    val uuid: UUID,
+    entityType: EntityType,
     location: Location,
-    hologramLines: List<String> = emptyList(),
-    actionCommand: String? = null,
-    skinType: SkinType? = null,
-    skinValue: String? = null
 ) {
-    var spawnLocation: Location = location.clone()
+
+    /**
+     * The entity type the body is built from. Changing it rebuilds the body, since no server
+     * version can convert an entity in place.
+     */
+    var entityType: EntityType = entityType
         private set
 
-    var hologramLines: List<String> = hologramLines.map { it.trim() }.filter { it.isNotEmpty() }
+    /** Where the body sits. Cloned on read and write so callers cannot mutate it behind our back. */
+    var location: Location = location.clone()
         private set
+        get() = field.clone()
 
-    var actionCommand: String? = cleanCommand(actionCommand)
-        private set
-
-    var skinType: SkinType? = skinType
-        private set
-
-    var skinValue: String? = cleanSkinValue(skinValue)
-        private set
-
-    private var entityUuid: UUID? = null
-    private var nmsPlayerNpc = false
-    private var hologram: UnifyHologram? = null
+    private val traits = ConcurrentHashMap<Class<out Trait>, Trait>()
     private val clickCooldowns = ConcurrentHashMap<UUID, Long>()
 
-    internal fun spawn(plugin: UnifyCore): UUID? {
-        despawn()
+    /** UUID of the live body entity, or null while despawned. */
+    @Volatile
+    var entityUuid: UUID? = null
+        private set
 
-        val nms = NMSHandlerFactory.getHandler()
-        val npcUuid = nms?.spawnPlayerNpc(id, spawnLocation, skinType, skinValue)
-        if (npcUuid != null) {
-            entityUuid = npcUuid
-            nmsPlayerNpc = true
-            getEntity()?.let { configureEntity(plugin, it) }
-            updateHologram()
-            return npcUuid
-        }
+    /** Suppresses repeat spawn-failure warnings; reset as soon as a spawn succeeds. */
+    private var spawnFailureLogged = false
 
-        nmsPlayerNpc = false
-        plugin.logger.warning("Failed to spawn player NPC '$id' at ${spawnLocation.world?.name} ${spawnLocation.x}, ${spawnLocation.y}, ${spawnLocation.z}")
-        return null
-    }
+    /** Runtime-only click handler, not persisted. Set by other plugins via [NPCRegistry.registerAction]. */
+    @Volatile
+    internal var runtimeAction: NPCAction? = null
 
-    internal fun despawn() {
-        val uuid = entityUuid
-        if (nmsPlayerNpc && uuid != null) {
-            NMSHandlerFactory.getHandler()?.despawnPlayerNpc(uuid)
-        } else {
-            getEntity()?.remove()
-        }
-        entityUuid = null
-        nmsPlayerNpc = false
-        clickCooldowns.clear()
-        hologram?.removeAll()
-        hologram = null
-    }
+    // ── Lifecycle ───────────────────────────────────────────────────────────
 
-    internal fun isEntity(entity: Entity): Boolean {
-        return entity.uniqueId == entityUuid
-    }
-
-    internal fun getEntityUuid(): UUID? {
-        return entityUuid
-    }
-
-    fun setActionCommand(command: String?) {
-        actionCommand = cleanCommand(command)
-    }
-
-    fun setSkin(type: SkinType, value: String) {
-        val cleanedValue = cleanSkinValue(value) ?: return
-        skinType = type
-        skinValue = cleanedValue
-        if (nmsPlayerNpc) {
-            respawnNmsEntity()
-        } else {
-            applySkin(getEntity())
-        }
-    }
-
-    fun clearSkin() {
-        skinType = null
-        skinValue = null
-        if (nmsPlayerNpc) {
-            respawnNmsEntity()
-        } else {
-            applySkin(getEntity())
-        }
-    }
+    /** True when a body exists. Since chunks are pinned, this only goes false via [despawn]. */
+    fun isSpawned(): Boolean = entityUuid?.let { Bukkit.getEntity(it) != null } ?: false
 
     /**
-     * Despawn + re-spawn the NMS player body (e.g. after a skin change) and re-show it to
-     * every online player in the same world. Callers must update entity lookups themselves
-     * when going through [NPCManager].
+     * Creates the body, pinning its chunk first so the entity cannot be discarded later.
+     *
+     * Despawns any existing body, so this doubles as the rebuild path for entity-type and skin
+     * changes. Returns false when the NMS module could not build the requested type — the NPC
+     * stays registered and despawned rather than being dropped, so a failure is recoverable
+     * without losing the NPC's configuration.
      */
-    private fun respawnNmsEntity() {
-        val location = spawnLocation.clone()
-        val nms = NMSHandlerFactory.getHandler()
-        val oldUuid = entityUuid
-        if (oldUuid != null) nms?.despawnPlayerNpc(oldUuid)
+    fun spawn(): Boolean {
+        despawn(NPCDespawnEvent.Reason.RESPAWN)
 
-        val newUuid = nms?.spawnPlayerNpc(id, location, skinType, skinValue)
-        entityUuid = newUuid
-        if (newUuid == null) {
-            nmsPlayerNpc = false
-            return
-        }
-        nmsPlayerNpc = true
-
-        // spawnPlayerNpc already sends packets, but re-run addViewer so holograms and any
-        // post-spawn bookkeeping stay in sync for players already in range.
-        Bukkit.getOnlinePlayers().forEach { viewer ->
-            if (viewer.world == location.world) {
-                addViewer(viewer)
-            }
-        }
-    }
-
-    /** True when the backing entity still exists in a loaded world (false after chunk unload). */
-    fun isSpawned(): Boolean {
-        val uuid = entityUuid ?: return false
-        return Bukkit.getEntity(uuid) != null
-    }
-
-    /** Re-send spawn packets / hologram lines to [player] if they can see this NPC. */
-    fun refreshViewer(player: Player) {
-        addViewer(player)
-    }
-
-    /** Re-send spawn packets to every online player in this NPC's world. */
-    fun refreshAllViewers() {
-        val world = spawnLocation.world ?: return
-        Bukkit.getOnlinePlayers().forEach { viewer ->
-            if (viewer.world == world) addViewer(viewer)
-        }
-    }
-
-    /**
-     * If the entity was discarded (chunk unload, failed skin, etc.), spawn it again.
-     * @return true when an entity is present afterwards
-     */
-    fun ensureSpawned(plugin: UnifyCore): Boolean {
-        if (isSpawned()) {
-            refreshAllViewers()
-            return true
-        }
-        return spawn(plugin) != null
-    }
-
-    fun setHologramLines(lines: List<String>) {
-        hologramLines = lines.map { it.trim() }.filter { it.isNotEmpty() }
-        updateHologram()
-    }
-
-    fun teleport(location: Location) {
-        spawnLocation = location.clone()
-        val uuid = entityUuid
-        if (nmsPlayerNpc && uuid != null) {
-            NMSHandlerFactory.getHandler()?.teleportPlayerNpc(uuid, spawnLocation)
-        } else {
-            getEntity()?.teleport(spawnLocation)
-        }
-        updateHologram()
-    }
-
-    internal fun handleClick(player: Player, runtimeAction: NPCAction?) {
-        if (!allowClick(player.uniqueId)) {
-            return
-        }
-
-        runtimeAction?.execute(player, this)
-
-        val command = actionCommand ?: return
-        val parsed = command
-            .replace("{player}", player.name, ignoreCase = true)
-            .replace("{npc}", id, ignoreCase = true)
-            .replace("{npc_id}", id, ignoreCase = true)
-            .trim()
-            .removePrefix("/")
-        if (parsed.isNotEmpty()) {
-            player.performCommand(parsed)
-        }
-    }
-
-    internal fun addViewer(player: Player) {
-        val uuid = entityUuid
-        if (nmsPlayerNpc && uuid != null) {
-            NMSHandlerFactory.getHandler()?.showPlayerNpcToViewer(player, uuid)
-        }
-        val npcHologram = hologram ?: return
-        if (spawnLocation.world == player.world) {
-            npcHologram.addViewer(player)
-        }
-    }
-
-    internal fun removeViewer(player: Player) {
-        hologram?.removeViewer(player)
-    }
-
-    private fun updateHologram() {
-        val world = spawnLocation.world
-        if (world == null || hologramLines.isEmpty()) {
-            hologram?.removeAll()
-            hologram = null
-            return
-        }
-
-        val lineObjects = hologramLines.map { HologramLine.Text(it) }
-        // Lines stack downwards from the anchor, so the anchor has to rise with the line
-        // count to keep the *bottom* line sitting just above the NPC's head. Anchoring the
-        // top line at a fixed height instead made every line past the second overlap the
-        // NPC, which is very visible on tall holograms such as leaderboards.
-        val stackHeight = (lineObjects.size - 1).coerceAtLeast(0) * LINE_SPACING
-        val hologramLocation = spawnLocation.clone().add(0.0, HOLOGRAM_HEIGHT + stackHeight, 0.0)
-
-        val npcHologram = hologram
-        if (npcHologram == null) {
-            hologram = UnifyHologram(hologramLocation, lineObjects).also { created ->
-                Bukkit.getOnlinePlayers().forEach { viewer ->
-                    if (viewer.world == world) {
-                        created.addViewer(viewer)
-                    }
-                }
-            }
-            return
-        }
-
-        // teleport() persists the hologram file; only pay that when the anchor really moved.
-        if (npcHologram.location != hologramLocation) {
-            npcHologram.teleport(hologramLocation)
-        }
-        npcHologram.lines = lineObjects
-        Bukkit.getOnlinePlayers().forEach { viewer ->
-            if (viewer.world == world) {
-                npcHologram.addViewer(viewer)
-            } else {
-                npcHologram.removeViewer(viewer)
-            }
-        }
-    }
-
-    private fun allowClick(playerUuid: UUID): Boolean {
-        val now = System.currentTimeMillis()
-        val nextAllowedAt = clickCooldowns[playerUuid] ?: 0L
-        if (now < nextAllowedAt) {
+        val world = location.world
+        if (world == null) {
+            UnifyCore.instance.logger.warning("NPC '$id' has no loaded world; leaving it despawned.")
             return false
         }
 
+        ChunkPin.pin(location)
+
+        val handler = NMSHandlerFactory.getHandler()
+        if (handler == null) {
+            UnifyCore.instance.logger.warning("No NMS handler for this server version; NPC '$id' cannot spawn.")
+            return false
+        }
+
+        val spawned = handler.spawnNpcEntity(buildSpawnSpec())
+        if (spawned == null) {
+            // Callers retry on a timer (AscendCore's leaderboard re-checks every second), so this
+            // warns once per NPC and stays quiet until something changes. Naming the handler makes
+            // an unsupported entity type on a given version diagnosable from one line.
+            if (!spawnFailureLogged) {
+                spawnFailureLogged = true
+                UnifyCore.instance.logger.warning(
+                    "Failed to spawn NPC '$id' as ${entityType.name} at " +
+                        "${world.name} ${location.blockX}, ${location.blockY}, ${location.blockZ} " +
+                        "(handler: ${handler.javaClass.simpleName}, " +
+                        "supported: ${handler.supportsNpcEntityType(entityType)}). " +
+                        "Further failures for this NPC will not be logged."
+                )
+            }
+            return false
+        }
+
+        spawnFailureLogged = false
+        entityUuid = spawned
+        NPCRegistry.bindEntity(spawned, this)
+
+        traits.values.forEach { trait ->
+            runCatching { trait.onSpawn() }
+                .onFailure { logTraitFailure(trait, "onSpawn", it) }
+        }
+
+        Bukkit.getPluginManager().callEvent(NPCSpawnEvent(this))
+        return true
+    }
+
+    /** Removes the body and releases its chunk pin. No-op when already despawned. */
+    fun despawn(reason: NPCDespawnEvent.Reason = NPCDespawnEvent.Reason.REQUESTED) {
+        val current = entityUuid ?: return
+
+        Bukkit.getPluginManager().callEvent(NPCDespawnEvent(this, reason))
+
+        traits.values.forEach { trait ->
+            runCatching { trait.onDespawn() }
+                .onFailure { logTraitFailure(trait, "onDespawn", it) }
+        }
+
+        NMSHandlerFactory.getHandler()?.despawnNpcEntity(current)
+        NPCRegistry.unbindEntity(current)
+        entityUuid = null
+        clickCooldowns.clear()
+
+        // Keep the pin across a respawn: releasing and re-pinning would let the chunk unload in
+        // between, which is exactly the window the old implementation kept losing bodies in.
+        if (reason != NPCDespawnEvent.Reason.RESPAWN) {
+            ChunkPin.unpin(location)
+        }
+    }
+
+    /** Moves the NPC, transferring the chunk pin to the destination. */
+    fun teleport(destination: Location) {
+        val previous = location
+        location = destination.clone()
+
+        if (isSpawned()) {
+            ChunkPin.pin(destination)
+            val moved = entityUuid?.let { NMSHandlerFactory.getHandler()?.teleportNpcEntity(it, destination) } ?: false
+            // A cross-world move cannot be a teleport on most versions — rebuild instead.
+            if (!moved || previous.world != destination.world) {
+                spawn()
+            }
+            if (previous.world != destination.world ||
+                previous.blockX shr 4 != destination.blockX shr 4 ||
+                previous.blockZ shr 4 != destination.blockZ shr 4
+            ) {
+                ChunkPin.unpin(previous)
+            }
+        }
+    }
+
+    /** Changes the body's entity type, rebuilding it if spawned. */
+    fun setEntityType(type: EntityType) {
+        if (type == entityType) return
+        entityType = type
+        if (isSpawned()) spawn()
+    }
+
+    // ── Traits ──────────────────────────────────────────────────────────────
+
+    @Suppress("UNCHECKED_CAST")
+    fun <T : Trait> getTrait(type: Class<T>): T? = traits[type] as? T
+
+    fun hasTrait(type: Class<out Trait>): Boolean = traits.containsKey(type)
+
+    /** All attached traits, in no particular order. */
+    fun traits(): Collection<Trait> = traits.values.toList()
+
+    /**
+     * Returns the attached trait of [type], creating and attaching it if absent.
+     *
+     * The type must be registered with [TraitRegistry]; an unregistered type throws, because a
+     * trait we cannot name is a trait we cannot persist, and silently dropping it at save time
+     * would be much harder to diagnose than failing here.
+     */
+    fun <T : Trait> getOrAddTrait(type: Class<T>): T {
+        getTrait(type)?.let { return it }
+        val created = TraitRegistry.create(type)
+            ?: throw IllegalArgumentException("Trait ${type.name} is not registered with TraitRegistry")
+        attach(created)
+        return created
+    }
+
+    /** Attaches [trait], replacing any existing trait of the same type. */
+    fun addTrait(trait: Trait) {
+        removeTrait(trait.javaClass)
+        attach(trait)
+    }
+
+    fun removeTrait(type: Class<out Trait>) {
+        val removed = traits.remove(type) ?: return
+        if (isSpawned()) {
+            runCatching { removed.onDespawn() }.onFailure { logTraitFailure(removed, "onDespawn", it) }
+        }
+        runCatching { removed.onRemove() }.onFailure { logTraitFailure(removed, "onRemove", it) }
+    }
+
+    private fun attach(trait: Trait) {
+        trait.npc = this
+        traits[trait.javaClass] = trait
+        runCatching { trait.onAttach() }.onFailure { logTraitFailure(trait, "onAttach", it) }
+        // A trait added to an already-spawned NPC still needs its spawn hook, or it would sit
+        // inert until the next restart.
+        if (isSpawned()) {
+            runCatching { trait.onSpawn() }.onFailure { logTraitFailure(trait, "onSpawn", it) }
+        }
+    }
+
+    /** Ticks every trait that asked to be ticked. Driven by [NPCRegistry]'s single shared task. */
+    internal fun tick() {
+        for (trait in traits.values) {
+            if (!trait.isTicking) continue
+            runCatching { trait.onTick() }.onFailure { logTraitFailure(trait, "onTick", it) }
+        }
+    }
+
+    // ── Interaction ─────────────────────────────────────────────────────────
+
+    internal fun handleRightClick(player: Player) {
+        if (!allowClick(player.uniqueId)) return
+
+        val event = NPCRightClickEvent(this, player)
+        Bukkit.getPluginManager().callEvent(event)
+        if (event.isCancelled) return
+
+        traits.values.forEach { trait ->
+            runCatching { trait.onRightClick(player) }
+                .onFailure { logTraitFailure(trait, "onRightClick", it) }
+        }
+
+        runtimeAction?.let { action ->
+            runCatching { action.execute(player, this) }
+                .onFailure { UnifyCore.instance.logger.warning("NPC '$id' runtime action failed: ${it.message}") }
+        }
+    }
+
+    internal fun handleLeftClick(player: Player) {
+        if (!allowClick(player.uniqueId)) return
+
+        val event = NPCLeftClickEvent(this, player)
+        Bukkit.getPluginManager().callEvent(event)
+        if (event.isCancelled) return
+
+        traits.values.forEach { trait ->
+            runCatching { trait.onLeftClick(player) }
+                .onFailure { logTraitFailure(trait, "onLeftClick", it) }
+        }
+    }
+
+    internal fun isBody(entity: Entity): Boolean = entity.uniqueId == entityUuid
+
+    /**
+     * Tells traits that [player]'s view of this NPC may have changed.
+     *
+     * The body itself needs no help — the server's entity tracker spawns and despawns it for each
+     * player automatically now that it is a normal world entity. This exists for traits that keep
+     * their own per-viewer state, such as [me.jordanfails.unify.npc.trait.HologramTrait].
+     */
+    internal fun updateViewer(player: Player, canSee: Boolean) {
+        traits.values.forEach { trait ->
+            runCatching { trait.onViewerUpdate(player, canSee) }
+                .onFailure { logTraitFailure(trait, "onViewerUpdate", it) }
+        }
+    }
+
+    /**
+     * Debounces clicks per player. A single right-click can surface as both
+     * PlayerInteractEntityEvent and PlayerInteractAtEntityEvent, so without this every click
+     * would fire the NPC's action twice.
+     */
+    private fun allowClick(playerUuid: UUID): Boolean {
+        val now = System.currentTimeMillis()
+        if (now < (clickCooldowns[playerUuid] ?: 0L)) return false
         clickCooldowns[playerUuid] = now + CLICK_COOLDOWN_MS
         return true
     }
 
-    private fun getEntity(): LivingEntity? {
-        val uuid = entityUuid ?: return null
-        return Bukkit.getEntity(uuid) as? LivingEntity
+    // ── Internals ───────────────────────────────────────────────────────────
+
+    /**
+     * Collects the trait-owned state that has to be present at construction time.
+     *
+     * The skin in particular cannot be applied afterwards on a player body — it lives on the
+     * GameProfile, which is fixed once the entity exists. Name and pose could be pushed by their
+     * traits post-spawn, but including them here avoids a visible tick of default appearance.
+     */
+    private fun buildSpawnSpec(): NPCSpawnSpec {
+        val nameTrait = getTrait(NameTrait::class.java)
+        return NPCSpawnSpec(
+            npcId = id,
+            entityType = entityType,
+            location = location,
+            skin = getTrait(SkinTrait::class.java)?.skin,
+            name = nameTrait?.displayName,
+            nameVisible = nameTrait?.visible ?: false,
+            pose = getTrait(PoseTrait::class.java)?.pose ?: NPCPose.STANDING,
+        )
     }
 
-    private fun applySkin(entity: LivingEntity?) {
-        val equipment = entity?.equipment ?: return
-        equipment.helmet = createSkinHead()
-        try {
-            equipment.helmetDropChance = 0f
-        } catch (_: Exception) {
-        }
-    }
-
-    private fun createSkinHead(): ItemStack? {
-        val type = skinType ?: return null
-        val value = skinValue ?: return null
-        val builder = SkullBuilder()
-        return when (type) {
-            SkinType.NAME -> builder.usePlayer(value).build()
-            SkinType.URL -> builder.useURL(value).build()
-            SkinType.BASE64 -> builder.useBase64(value).build()
-        }
-    }
-
-    private fun configureEntity(plugin: UnifyCore, entity: LivingEntity) {
-        entity.setMetadata(NPCManager.NPC_METADATA_KEY, FixedMetadataValue(plugin, id))
-        runBooleanSetter(entity, "setCanPickupItems", false)
-        runBooleanSetter(entity, "setRemoveWhenFarAway", false)
-        runBooleanSetter(entity, "setAI", false)
-        runBooleanSetter(entity, "setSilent", true)
-        runBooleanSetter(entity, "setInvulnerable", true)
-        runBooleanSetter(entity, "setCollidable", false)
-
-        if (!hasMethod(entity, "setAI")) {
-            entity.addPotionEffect(PotionEffect(PotionEffectType.SLOW, Int.MAX_VALUE, 10, true, false))
-        }
-    }
-
-    private fun runBooleanSetter(target: Any, methodName: String, value: Boolean) {
-        try {
-            val method = target.javaClass.getMethod(methodName, java.lang.Boolean.TYPE)
-            method.invoke(target, value)
-        } catch (_: Exception) {
-        }
-    }
-
-    private fun hasMethod(target: Any, methodName: String): Boolean {
-        return try {
-            target.javaClass.getMethod(methodName, java.lang.Boolean.TYPE)
-            true
-        } catch (_: Exception) {
-            false
-        }
+    private fun logTraitFailure(trait: Trait, hook: String, error: Throwable) {
+        UnifyCore.instance.logger.warning(
+            "Trait '${trait.name}' on NPC '$id' failed during $hook: ${error.message}"
+        )
     }
 
     companion object {
         private const val CLICK_COOLDOWN_MS = 200L
-        private const val HOLOGRAM_HEIGHT = 2.35
-        /** Must match the text-line spacing the NMS hologram renderer uses. */
-        private const val LINE_SPACING = 0.25
-
-        private fun cleanSkinValue(value: String?): String? {
-            return value?.trim()?.takeIf { it.isNotEmpty() }
-        }
-
-        private fun cleanCommand(command: String?): String? {
-            return command?.trim()?.takeIf { it.isNotEmpty() }
-        }
-    }
-
-    enum class SkinType {
-        NAME,
-        URL,
-        BASE64,
     }
 }

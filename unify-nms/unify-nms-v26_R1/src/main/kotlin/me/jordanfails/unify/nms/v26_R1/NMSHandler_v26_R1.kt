@@ -14,8 +14,11 @@ import me.jordanfails.unify.hologram.HologramLine
 import me.jordanfails.unify.hologram.UnifyHologram
 import me.jordanfails.unify.menu.anvil.AnvilHandle
 import me.jordanfails.unify.nms.NMSHandler
+import me.jordanfails.unify.npc.BukkitNpcBody
+import me.jordanfails.unify.npc.NPCRegistry
+import me.jordanfails.unify.npc.NPCSkin
+import me.jordanfails.unify.npc.NPCSpawnSpec
 import me.jordanfails.unify.nms.ServerVersion
-import me.jordanfails.unify.npc.UnifyNPC
 import net.kyori.adventure.text.minimessage.MiniMessage
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
 import net.minecraft.ChatFormatting
@@ -56,7 +59,14 @@ import net.minecraft.world.scores.Scoreboard
 import net.minecraft.world.scores.Team
 import net.minecraft.world.scores.criteria.ObjectiveCriteria
 import org.bukkit.Bukkit
+import io.papermc.paper.event.player.PlayerTrackEntityEvent
+import org.bukkit.event.player.PlayerChangedWorldEvent
+import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.Location
+import org.bukkit.entity.EntityType
+import org.bukkit.event.EventHandler
+import org.bukkit.event.Listener
+import org.bukkit.metadata.FixedMetadataValue
 import org.bukkit.block.BlockState
 import org.bukkit.boss.BarColor
 import org.bukkit.boss.BarStyle
@@ -81,7 +91,6 @@ import java.util.UUID
 
 @Suppress("unused")
 class NMSHandler_v26_R1 : NMSHandler {
-    private val npcPlayers = mutableMapOf<UUID, ServerPlayer>()
     private val fakePlayers = mutableMapOf<UUID, ServerPlayer>()
     
     override fun sendTitle(
@@ -321,111 +330,11 @@ class NMSHandler_v26_R1 : NMSHandler {
         }
     }
 
-    override fun spawnPlayerNpc(id: String, location: Location, skinType: UnifyNPC.SkinType?, skinValue: String?): UUID? {
-        return try {
-            val bukkitWorld = location.world ?: return null
-            val world = (bukkitWorld as CraftWorld).handle
-            val server = (Bukkit.getServer() as CraftServer).server
 
-            val requestedName = skinValue?.trim().orEmpty()
-            val resolvedNamedSkin = if (skinType == UnifyNPC.SkinType.NAME && requestedName.isNotEmpty()) {
-                resolveNamedSkin(requestedName)
-            } else {
-                null
-            }
 
-            // NEVER use a real player's UUID or name.
-            // - Same UUID → "Force-added player with duplicate UUID" when they join.
-            // - Same name → vanilla nametag + BELOW_NAME (AscendCore hearts) + nametag plugins
-            //   all key scoreboard entries by name, so the NPC inherits "JordanFails" + "20 ❤"
-            //   and any team update for that player yanks the NPC out of the hidden-nametag team.
-            // Skin is still JordanFails (or whatever) — textures are baked below; display name is not.
-            val profileUuid = npcUuidFor(id)
-            val profileName = "npc" + profileUuid.toString().replace("-", "").take(13)
 
-            // Bake textures into the GameProfile at construction. Paper 26 / modern authlib
-            // make GameProfile.properties final + often immutable — mutating after the fact
-            // (removeAll / field.set) throws and aborts spawn after despawn.
-            val texture = resolveTexture(skinType, skinValue, resolvedNamedSkin)
-            val profile = createGameProfile(profileUuid, profileName, texture)
 
-            val npc = ServerPlayer(server, world, profile, ClientInformation.createDefault())
-            positionServerPlayer(npc, location)
-            attachFakeConnection(server, npc, profile)
-            npc.noPhysics = true
-            npc.isNoGravity = true
-            npc.isInvulnerable = true
 
-            // Despawn any prior body for this NPC id (same deterministic uuid).
-            npcPlayers.remove(profileUuid)?.let { old ->
-                runCatching { old.remove(Entity.RemovalReason.DISCARDED) }
-            }
-
-            world.addNewPlayer(npc)
-            val bukkitEntity = npc.bukkitEntity
-            bukkitEntity.isCollidable = false
-            bukkitEntity.canPickupItems = false
-            bukkitEntity.isSilent = true
-            bukkitEntity.isInvulnerable = true
-
-            npcPlayers[profileUuid] = npc
-            Bukkit.getOnlinePlayers().forEach { viewer ->
-                sendPlayerNpcSpawnPackets(viewer, npc)
-                scheduleHidePlayerNpcFromTab(viewer, profileUuid, 20L)
-            }
-            profileUuid
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
-    }
-
-    override fun despawnPlayerNpc(uuid: UUID) {
-        val npc = npcPlayers.remove(uuid) ?: return
-        try {
-            npc.remove(Entity.RemovalReason.DISCARDED)
-            Bukkit.getOnlinePlayers().forEach { viewer ->
-                val craftViewer = viewer as CraftPlayer
-                craftViewer.handle.connection.send(ClientboundPlayerInfoRemovePacket(listOf(uuid)))
-                craftViewer.handle.connection.send(ClientboundRemoveEntitiesPacket(npc.id))
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    override fun teleportPlayerNpc(uuid: UUID, location: Location): Boolean {
-        val npc = npcPlayers[uuid] ?: return false
-        return try {
-            positionServerPlayer(npc, location)
-            npc.bukkitEntity.teleport(location)
-            npc.noPhysics = true
-            npc.isNoGravity = true
-            true
-        } catch (e: Exception) {
-            e.printStackTrace()
-            false
-        }
-    }
-
-    override fun hidePlayerNpcFromTab(viewer: Player, npcUuid: UUID) {
-        try {
-            (viewer as CraftPlayer).handle.connection.send(ClientboundPlayerInfoRemovePacket(listOf(npcUuid)))
-        } catch (_: Exception) {
-        }
-    }
-
-    private fun scheduleHidePlayerNpcFromTab(viewer: Player, npcUuid: UUID, delayTicks: Long) {
-        Bukkit.getScheduler().runTaskLater(UnifyCore.instance, Runnable {
-            hidePlayerNpcFromTab(viewer, npcUuid)
-        }, delayTicks)
-    }
-
-    override fun showPlayerNpcToViewer(viewer: Player, npcUuid: UUID) {
-        val npc = npcPlayers[npcUuid] ?: return
-        sendPlayerNpcSpawnPackets(viewer, npc)
-        scheduleHidePlayerNpcFromTab(viewer, npcUuid, 20L)
-    }
     private fun sendEntityPacket(viewer: Player, className: String, entity: ServerPlayer, vararg extras: Any): Boolean {
         return try {
             val packetClass = Class.forName(className)
@@ -441,43 +350,284 @@ class NMSHandler_v26_R1 : NMSHandler {
         }
     }
 
-    private fun sendPlayerNpcSpawnPackets(viewer: Player, npc: ServerPlayer) {
-        try {
-            val craftViewer = viewer as CraftPlayer
-            val connection = craftViewer.handle.connection
-            createPlayerInfoAddPacket(npc)?.let { connection.send(it) }
 
-            val addPacket = ClientboundAddEntityPacket(
-                npc.id,
-                npc.uuid,
-                npc.x,
-                npc.y,
-                npc.z,
-                npc.xRot,
-                npc.yRot,
-                npc.type,
-                0,
-                npc.deltaMovement,
-                npc.yHeadRot.toDouble()
+
+
+
+
+
+
+
+
+    // ── NPC bodies ──────────────────────────────────────────────────────────
+    //
+    // Only PLAYER bodies are handled here. Every other entity type goes through [BukkitNpcBody],
+    // which behaves identically on every supported version and needs no NMS at all.
+
+    /** Ticks to wait after a join/world change before re-sending NPC bodies to that client. */
+    private val JOIN_PROFILE_DELAY_TICKS = 20L
+
+    /**
+     * How long a player-info entry lingers before being dropped again.
+     *
+     * Must outlive the add-entity packet sent alongside it or the client never binds the skin.
+     * One tick is not enough; this matches the value the pre-rewrite implementation shipped with.
+     */
+    private val TAB_HIDE_DELAY_TICKS = 20L
+
+    private val npcPlayers = java.util.concurrent.ConcurrentHashMap<UUID, ServerPlayer>()
+    private var npcTrackListenerRegistered = false
+
+    override fun supportsNpcEntityType(type: EntityType): Boolean =
+        type == EntityType.PLAYER || BukkitNpcBody.supports(type)
+
+    /**
+     * Builds a player body.
+     *
+     * Added with `addFreshEntity`, not `addNewPlayer`. The body has to be an ordinary world
+     * entity: one that reaches the server's player list shows up in `Bukkit.getOnlinePlayers()`,
+     * enters the login pipeline, and forces every consumer of the player list to filter it back
+     * out — which is what the previous implementation spent most of its code doing.
+     *
+     * The caller has already pinned the chunk, so nothing here needs to keep the entity alive.
+     */
+    override fun spawnNpcEntity(spec: NPCSpawnSpec): UUID? {
+        if (spec.entityType != EntityType.PLAYER) return BukkitNpcBody.spawn(spec)
+
+        return try {
+            val bukkitWorld = spec.location.world ?: return null
+            val world = (bukkitWorld as CraftWorld).handle
+            val server = (Bukkit.getServer() as CraftServer).server
+
+            // Never reuse a real player's UUID or name:
+            //  - same UUID  -> "Force-added player with duplicate UUID" when they join.
+            //  - same name  -> vanilla nametags, BELOW_NAME and nametag plugins all key scoreboard
+            //    entries by name, so the NPC inherits their display name and any team update for
+            //    that player yanks the NPC out of its hidden-nametag team.
+            // The skin still comes from them; only the identity is independent.
+            val profileUuid = UUID.randomUUID()
+            val profileName = "npc" + profileUuid.toString().replace("-", "").take(13)
+
+            // Textures are baked in at construction. On Paper 26 / modern authlib
+            // GameProfile.properties is final and often immutable, so mutating it afterwards
+            // throws — and used to abort the spawn *after* the old body had been despawned.
+            val profile = createGameProfile(
+                profileUuid,
+                profileName,
+                spec.skin?.let { TextureProperty(it.value, it.signature) },
             )
-            connection.send(addPacket)
 
-            val dataValues = npc.entityData.packAll()
-            if (dataValues != null) {
-                connection.send(ClientboundSetEntityDataPacket(npc.id, dataValues))
+            val npc = ServerPlayer(server, world, profile, ClientInformation.createDefault())
+            positionServerPlayer(npc, spec.location)
+            attachFakeConnection(server, npc, profile)
+            npc.noPhysics = true
+            npc.isNoGravity = true
+            npc.isInvulnerable = true
+
+            npcPlayers[profileUuid] = npc
+            // Registered before the entity joins the level, so the very first tracking pass
+            // already carries the profile packet and therefore the skin.
+            ensureNpcTrackListener()
+
+            world.addFreshEntity(npc)
+
+            val bukkitEntity = npc.bukkitEntity
+            bukkitEntity.isCollidable = false
+            bukkitEntity.canPickupItems = false
+            bukkitEntity.isSilent = true
+            bukkitEntity.isInvulnerable = true
+            bukkitEntity.setMetadata(
+                NPCRegistry.NPC_METADATA_KEY, FixedMetadataValue(UnifyCore.instance, spec.npcId)
+            )
+            bukkitEntity.setMetadata(
+                NPCRegistry.LEGACY_NPC_METADATA_KEY, FixedMetadataValue(UnifyCore.instance, true)
+            )
+
+            // Players already in range are tracked before the listener can fire for them, so they
+            // are seeded explicitly. The tracker owns the entity packets from here on.
+            Bukkit.getOnlinePlayers().forEach { viewer ->
+                if (viewer.world == bukkitWorld) refreshNpcForViewer(viewer, npc)
             }
 
+            profileUuid
+        } catch (e: Exception) {
+            UnifyCore.instance.logger.warning("Failed to spawn player NPC '${spec.npcId}': ${e.message}")
+            e.printStackTrace()
+            null
+        }
+    }
+
+    override fun despawnNpcEntity(entityUuid: UUID) {
+        val npc = npcPlayers.remove(entityUuid)
+        if (npc == null) {
+            BukkitNpcBody.despawn(entityUuid)
+            return
+        }
+
+        try {
+            npc.remove(Entity.RemovalReason.DISCARDED)
+            // The tracker stops sending updates but does not retract what clients already have,
+            // so both the entity and its player-info entry are removed explicitly.
+            Bukkit.getOnlinePlayers().forEach { viewer ->
+                val connection = (viewer as CraftPlayer).handle.connection
+                connection.send(ClientboundPlayerInfoRemovePacket(listOf(entityUuid)))
+                connection.send(ClientboundRemoveEntitiesPacket(npc.id))
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    override fun teleportNpcEntity(entityUuid: UUID, location: Location): Boolean {
+        val npc = npcPlayers[entityUuid] ?: return BukkitNpcBody.teleport(entityUuid, location)
+        if (npc.bukkitEntity.world != location.world) return false
+
+        return try {
+            positionServerPlayer(npc, location)
+            npc.bukkitEntity.teleport(location)
+            // The teleport re-enables both, and a body that falls or suffocates is the single most
+            // common way an NPC setup breaks.
+            npc.noPhysics = true
+            npc.isNoGravity = true
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    /**
+     * Skins cannot be swapped in place on this version: the profile's property map is immutable,
+     * so the texture can only be set when the profile is built. Returning false tells
+     * [me.jordanfails.unify.npc.trait.SkinTrait] to rebuild the NPC, which spawns a fresh body
+     * with the new texture baked in.
+     */
+    override fun setNpcSkin(entityUuid: UUID, skin: NPCSkin?): Boolean = false
+
+    /**
+     * Player bodies render their profile name above their head, and that name is the synthetic
+     * `npcXXXXXXXXXXXXX` id — hidden by a team on spawn, so there is no nameplate to write to.
+     * Label player NPCs with a hologram instead.
+     */
+    override fun setNpcName(entityUuid: UUID, name: String?, visible: Boolean): Boolean {
+        if (npcPlayers.containsKey(entityUuid)) return false
+        return BukkitNpcBody.setName(entityUuid, name, visible)
+    }
+
+    /**
+     * Feeds the NPC's profile to each viewer the moment the server starts tracking it.
+     *
+     * Without this, only players online at spawn time ever receive the profile packet; anyone who
+     * joins later, changes worlds, or walks out of range and back gets the tracker's spawn packet
+     * with no profile attached, and renders a default skin.
+     */
+    private fun ensureNpcTrackListener() {
+        if (npcTrackListenerRegistered) return
+        npcTrackListenerRegistered = true
+
+        Bukkit.getPluginManager().registerEvents(object : Listener {
+            @EventHandler
+            fun onTrack(event: PlayerTrackEntityEvent) {
+                val npc = npcPlayers[event.entity.uniqueId] ?: return
+                refreshNpcForViewer(event.player, npc)
+            }
+
+            @EventHandler
+            fun onJoin(event: PlayerJoinEvent) {
+                resendProfilesLater(event.player)
+            }
+
+            @EventHandler
+            fun onWorldChange(event: PlayerChangedWorldEvent) {
+                resendProfilesLater(event.player)
+            }
+        }, UnifyCore.instance)
+    }
+
+    /**
+     * Re-sends every nearby NPC's profile to [player] once their client has settled.
+     *
+     * A skin applied while nobody was online — the usual case at server startup — has no viewer
+     * to send its profile to, so it relies entirely on the tracker firing later. That proved
+     * unreliable: NPCs skinned at boot rendered as the default player, while NPCs skinned later
+     * (when someone was already online to receive the explicit send) looked correct. Re-sending on
+     * join closes that gap, and is cheap since it only touches NPCs in the player's world.
+     */
+    private fun resendProfilesLater(player: Player) {
+        Bukkit.getScheduler().runTaskLater(UnifyCore.instance, Runnable {
+            if (!player.isOnline) return@Runnable
+            npcPlayers.values.forEach { npc ->
+                if (runCatching { npc.bukkitEntity.world == player.world }.getOrDefault(false)) {
+                    refreshNpcForViewer(player, npc)
+                }
+            }
+        }, JOIN_PROFILE_DELAY_TICKS)
+    }
+
+    /**
+     * Re-sends [npc] to [viewer] as an ordered burst: despawn, profile, respawn.
+     *
+     * A client binds a player entity's skin **when it spawns the entity**, from that entity's
+     * player-info entry. Two consequences drive everything here:
+     *
+     *  - Sending the profile after the entity already exists client-side does nothing. The entity
+     *    has to be removed and re-added for a new skin to take.
+     *  - The profile entry must still be present when the add-entity packet lands, so it cannot be
+     *    dropped a tick later — hence [TAB_HIDE_DELAY_TICKS].
+     *
+     * Sending both packets ourselves is what makes the order guaranteed. Leaving the spawn packet
+     * to the server's entity tracker looked cleaner but raced: whenever the tracker's add-entity
+     * arrived before our profile, the client fell back to a UUID-derived default skin and stayed
+     * there, which is exactly what NPCs skinned before anyone was online did.
+     */
+    private fun refreshNpcForViewer(viewer: Player, npc: ServerPlayer) {
+        try {
+            val connection = (viewer as CraftPlayer).handle.connection
+
+            // Drop the client's current copy first, so the re-add below is what binds the skin.
+            connection.send(ClientboundRemoveEntitiesPacket(npc.id))
+
+            createPlayerInfoAddPacket(npc)?.let { connection.send(it) }
+
+            connection.send(
+                ClientboundAddEntityPacket(
+                    npc.id,
+                    npc.uuid,
+                    npc.x,
+                    npc.y,
+                    npc.z,
+                    npc.xRot,
+                    npc.yRot,
+                    npc.type,
+                    0,
+                    npc.deltaMovement,
+                    npc.yHeadRot.toDouble(),
+                )
+            )
+
+            npc.entityData.packAll()?.let { connection.send(ClientboundSetEntityDataPacket(npc.id, it)) }
+
             sendHideNpcNametag(connection, npc)
+
+            // Long enough that the add-entity packet above has certainly been processed. The cost
+            // is the NPC sitting in this player's tab list for that window.
+            Bukkit.getScheduler().runTaskLater(UnifyCore.instance, Runnable {
+                runCatching {
+                    if (viewer.isOnline) {
+                        (viewer as CraftPlayer).handle.connection
+                            .send(ClientboundPlayerInfoRemovePacket(listOf(npc.uuid)))
+                    }
+                }
+            }, TAB_HIDE_DELAY_TICKS)
         } catch (_: Exception) {
         }
     }
 
-    private fun sendHideNpcNametag(connection: net.minecraft.server.network.ServerGamePacketListenerImpl, npc: ServerPlayer) {
-        // Stable per-NPC team; profile name is synthetic (npc…) so nametag plugins won't
-        // re-add this entry to a visible team under the skin owner's real name.
+    private fun sendHideNpcNametag(connection: ServerGamePacketListenerImpl, npc: ServerPlayer) {
+        // Stable per-NPC team. The profile name is synthetic, so nametag plugins will not re-add
+        // this entry to a visible team under the skin owner's real name.
         val teamName = "unpc_${npc.uuid.toString().replace("-", "").take(12)}"
-        val dummyScoreboard = Scoreboard()
-        val team = PlayerTeam(dummyScoreboard, teamName)
+        val team = PlayerTeam(Scoreboard(), teamName)
         team.nameTagVisibility = Team.Visibility.NEVER
         team.collisionRule = Team.CollisionRule.NEVER
         connection.send(ClientboundSetPlayerTeamPacket.createAddOrModifyPacket(team, true))
@@ -511,119 +661,19 @@ class NMSHandler_v26_R1 : NMSHandler {
         }.getOrNull()
     }
 
-    private fun sanitizeNpcName(source: String?): String {
-        val raw = (source ?: "npc").trim().ifEmpty { "npc" }
-        return raw.replace(Regex("[^A-Za-z0-9_]"), "_").take(16).ifEmpty { "npc" }
-    }
-
-    /**
-     * Resolve skin texture data without mutating a GameProfile.
-     * Textures are baked into the profile at construction — see [createGameProfile].
-     */
-    private fun resolveTexture(
-        skinType: UnifyNPC.SkinType?,
-        skinValue: String?,
-        resolvedNamedSkin: ResolvedNamedSkin? = null,
-    ): TextureProperty? {
-        if (skinType == null || skinValue.isNullOrBlank()) return null
-
-        return when (skinType) {
-            UnifyNPC.SkinType.NAME -> {
-                resolvedNamedSkin?.let {
-                    TextureProperty(it.textureValue, it.textureSignature)
-                } ?: run {
-                    val onlineSource = Bukkit.getPlayerExact(skinValue) as? CraftPlayer
-                    onlineSource?.let {
-                        getProfileTextures(it.handle.gameProfile).firstOrNull()
-                    }
-                }
-            }
-            UnifyNPC.SkinType.URL -> {
-                val json = "{\"textures\":{\"SKIN\":{\"url\":\"$skinValue\"}}}"
-                val encoded = Base64.getEncoder().encodeToString(json.toByteArray(StandardCharsets.UTF_8))
-                TextureProperty(encoded, null)
-            }
-            UnifyNPC.SkinType.BASE64 -> TextureProperty(skinValue, null)
-        }
-    }
-
-    private data class ResolvedNamedSkin(
-        val uuid: UUID,
-        val textureValue: String,
-        val textureSignature: String?,
-    )
-
-    /** Stable UUID per NPC id — never a real player's Mojang UUID. */
-    private fun npcUuidFor(id: String): UUID =
-        UUID.nameUUIDFromBytes("unify-npc:$id".toByteArray(StandardCharsets.UTF_8))
-
-    private fun resolveNamedSkin(name: String): ResolvedNamedSkin? {
-        val onlineSource = Bukkit.getPlayerExact(name) as? CraftPlayer
-        if (onlineSource != null) {
-            val sourceProfile = onlineSource.handle.gameProfile
-            val texture = getProfileTextures(sourceProfile).firstOrNull()
-            if (texture != null) {
-                return ResolvedNamedSkin(sourceProfile.id, texture.value, texture.signature)
-            }
-        }
-
-        return runCatching {
-            val profileJson = URL("https://api.mojang.com/users/profiles/minecraft/$name").readJson() ?: return null
-            val idMatch = Regex("\"id\"\\s*:\\s*\"([0-9a-fA-F]{32})\"").find(profileJson) ?: return null
-            val idWithoutDashes = idMatch.groupValues[1]
-            val mojangUuid = parseMojangUuid(idWithoutDashes) ?: return null
-
-            val textureJson = URL("https://sessionserver.mojang.com/session/minecraft/profile/$idWithoutDashes?unsigned=false").readJson()
-                ?: return null
-            val textureBlock = Regex(
-                "\"name\"\\s*:\\s*\"textures\"[\\s\\S]*?\"value\"\\s*:\\s*\"([^\"]+)\"(?:[\\s\\S]*?\"signature\"\\s*:\\s*\"([^\"]+)\")?"
-            ).find(textureJson) ?: return null
-
-            ResolvedNamedSkin(
-                uuid = mojangUuid,
-                textureValue = textureBlock.groupValues[1],
-                textureSignature = textureBlock.groupValues.getOrNull(2)?.ifBlank { null }
+    private fun createGameProfile(uuid: UUID, name: String, texture: TextureProperty?): GameProfile {
+        val multimap = ArrayListMultimap.create<String, Property>()
+        if (texture != null && texture.value.isNotBlank()) {
+            multimap.put(
+                "textures",
+                if (texture.signature.isNullOrBlank()) {
+                    Property("textures", texture.value)
+                } else {
+                    Property("textures", texture.value, texture.signature)
+                },
             )
-        }.getOrNull()
-    }
-
-    private fun parseMojangUuid(compactUuid: String): UUID? {
-        val cleaned = compactUuid.lowercase(Locale.ROOT).trim()
-        if (!cleaned.matches(Regex("^[0-9a-f]{32}$"))) {
-            return null
         }
-
-        val dashed = buildString {
-            append(cleaned, 0, 8)
-            append('-')
-            append(cleaned, 8, 12)
-            append('-')
-            append(cleaned, 12, 16)
-            append('-')
-            append(cleaned, 16, 20)
-            append('-')
-            append(cleaned, 20, 32)
-        }
-
-        return runCatching { UUID.fromString(dashed) }.getOrNull()
-    }
-
-    private fun URL.readJson(): String? {
-        val connection = (openConnection() as? HttpURLConnection) ?: return null
-        connection.requestMethod = "GET"
-        connection.connectTimeout = 3000
-        connection.readTimeout = 3000
-        connection.setRequestProperty("Accept", "application/json")
-
-        return try {
-            if (connection.responseCode !in 200..299) {
-                null
-            } else {
-                connection.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
-            }
-        } finally {
-            connection.disconnect()
-        }
+        return GameProfile(uuid, name, PropertyMap(multimap))
     }
 
     private data class TextureProperty(
@@ -640,27 +690,6 @@ class NMSHandler_v26_R1 : NMSHandler {
             }.getOrNull()
     }
 
-    /**
-     * Build a [GameProfile] with optional textures already present.
-     *
-     * Paper 26 / modern authlib make `GameProfile.properties` **final** and often back it
-     * with an immutable multimap — post-construction mutation (removeAll / Field.set) fails.
-     * Baking textures into the constructor is the only reliable path.
-     */
-    private fun createGameProfile(uuid: UUID, name: String, texture: TextureProperty?): GameProfile {
-        val multimap = ArrayListMultimap.create<String, Property>()
-        if (texture != null && texture.value.isNotBlank()) {
-            multimap.put(
-                "textures",
-                if (texture.signature.isNullOrBlank()) {
-                    Property("textures", texture.value)
-                } else {
-                    Property("textures", texture.value, texture.signature)
-                },
-            )
-        }
-        return GameProfile(uuid, name, PropertyMap(multimap))
-    }
 
     private fun getProfileTextures(profile: GameProfile): List<TextureProperty> {
         val properties = getProfileProperties(profile) ?: return emptyList()

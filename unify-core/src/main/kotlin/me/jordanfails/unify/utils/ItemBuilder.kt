@@ -7,13 +7,17 @@ import org.bukkit.Bukkit
 import org.bukkit.ChatColor
 import org.bukkit.Color
 import org.bukkit.Material
+import org.bukkit.attribute.Attribute
+import org.bukkit.attribute.AttributeModifier
 import org.bukkit.enchantments.Enchantment
 import org.bukkit.entity.Player
+import org.bukkit.event.inventory.ClickType
+import org.bukkit.inventory.EquipmentSlot
+import org.bukkit.inventory.InventoryView
 import org.bukkit.inventory.ItemFlag
 import org.bukkit.inventory.ItemStack
-import org.bukkit.event.inventory.ClickType
-import org.bukkit.inventory.InventoryView
 import org.bukkit.inventory.meta.LeatherArmorMeta
+import java.util.UUID
 
 class ItemBuilder(private val item: ItemStack) {
 
@@ -116,6 +120,62 @@ class ItemBuilder(private val item: ItemStack) {
     fun customData(data: Int) = apply {
         val meta = item.itemMeta ?: Bukkit.getItemFactory().getItemMeta(item.type)
         meta?.setCustomModelData(data)
+        item.itemMeta = meta
+    }
+
+    /**
+     * Adds an [AttributeModifier] for the given [attribute].
+     *
+     * By default, any existing modifiers for that attribute are removed first
+     * (same pattern as remove + add on ItemMeta).
+     *
+     * @param slot equipment slot this modifier applies to, or null for all slots
+     * @param name modifier name used for the Bukkit [AttributeModifier]
+     * @param uuid stable id for the modifier; defaults to a name-based UUID from attribute + name
+     * @param replace when true, clears existing modifiers for [attribute] before adding
+     */
+    fun attribute(
+        attribute: Attribute,
+        amount: Double,
+        operation: AttributeModifier.Operation = AttributeModifier.Operation.ADD_NUMBER,
+        slot: EquipmentSlot? = EquipmentSlot.HAND,
+        name: String = "unify",
+        uuid: UUID = UUID.nameUUIDFromBytes("unify:${attribute.name}:$name".toByteArray()),
+        replace: Boolean = true,
+    ) = attribute(
+        attribute,
+        AttributeModifier(uuid, name, amount, operation, slot),
+        replace,
+    )
+
+    /**
+     * Adds a pre-built [AttributeModifier]. When [replace] is true, existing
+     * modifiers for [attribute] are removed first.
+     */
+    fun attribute(
+        attribute: Attribute,
+        modifier: AttributeModifier,
+        replace: Boolean = true,
+    ) = apply {
+        val meta = item.itemMeta ?: Bukkit.getItemFactory().getItemMeta(item.type) ?: return@apply
+        if (replace) {
+            meta.removeAttributeModifier(attribute)
+        }
+        meta.addAttributeModifier(attribute, modifier)
+        item.itemMeta = meta
+    }
+
+    /** Removes all attribute modifiers for [attribute]. */
+    fun removeAttribute(attribute: Attribute) = apply {
+        val meta = item.itemMeta ?: return@apply
+        meta.removeAttributeModifier(attribute)
+        item.itemMeta = meta
+    }
+
+    /** Removes every attribute modifier from this item. */
+    fun clearAttributes() = apply {
+        val meta = item.itemMeta ?: return@apply
+        meta.attributeModifiers = null
         item.itemMeta = meta
     }
 
