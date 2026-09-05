@@ -108,11 +108,11 @@ class ItemBuilder(private val item: ItemStack) {
     fun glow(enabled: Boolean = true) = apply {
         val meta = item.itemMeta ?: Bukkit.getItemFactory().getItemMeta(item.type)
         if (enabled) {
-            if (!item.enchantments.containsKey(Enchantment.DURABILITY))
-                item.addUnsafeEnchantment(Enchantment.DURABILITY, 1)
+            meta?.addEnchant(Enchantment.DURABILITY, 1, true)
             meta?.addItemFlags(ItemFlag.HIDE_ENCHANTS)
         } else {
-            item.removeEnchantment(Enchantment.DURABILITY)
+            meta?.removeEnchant(Enchantment.DURABILITY)
+            meta?.removeItemFlags(ItemFlag.HIDE_ENCHANTS)
         }
         item.itemMeta = meta
     }

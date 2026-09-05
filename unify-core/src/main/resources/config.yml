@@ -26,3 +26,12 @@ tab:
     - "&7Online: &d{online}&7/&d{max_players}"
     - "&eplay.etheriamc.net"
     - ""
+
+bossbar:
+  enabled: true
+  update-interval-ticks: 20
+  tick-interval-ticks: 4
+  # Indent prefix prepended once per nesting level.
+  indent: "  "
+  # Format: title|color|style|progress (everything after the title is optional).
+  lines: []

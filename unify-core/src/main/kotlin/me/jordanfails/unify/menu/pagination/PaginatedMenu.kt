@@ -46,14 +46,10 @@ abstract class PaginatedMenu : Menu() {
         val totalPages = getPages(player).coerceAtLeast(1)
         page = page.coerceIn(1, totalPages)
 
-        // ── ① page navigation buttons
+        // ── ① page navigation (always placed; buttons render gray glass when disabled)
         getPageButtonSlots()?.let { slots ->
-            if (page > 1) {
-                createPageButton(-1)?.let { buttons[slots.first] = it }
-            }
-            if (page < totalPages) {
-                createPageButton(1)?.let { buttons[slots.second] = it }
-            }
+            createPageButton(-1)?.let { buttons[slots.first] = it }
+            createPageButton(1)?.let { buttons[slots.second] = it }
         }
 
         // insert entry buttons

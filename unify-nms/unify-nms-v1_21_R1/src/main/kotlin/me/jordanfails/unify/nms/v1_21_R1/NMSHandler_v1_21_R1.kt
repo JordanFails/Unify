@@ -5,6 +5,7 @@ import io.papermc.paper.adventure.PaperAdventure
 import com.mojang.authlib.GameProfile
 import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.bossbar.BossBarColor
+import me.jordanfails.unify.bossbar.BossBarFlag
 import me.jordanfails.unify.bossbar.BossBarStyle
 import me.jordanfails.unify.bossbar.UnifyBossBar
 import me.jordanfails.unify.hologram.HologramLine
@@ -37,9 +38,12 @@ import net.minecraft.network.protocol.game.ClientboundSetObjectivePacket
 import net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket
 import net.minecraft.network.protocol.game.ClientboundSetScorePacket
 import net.minecraft.network.protocol.game.ClientboundTabListPacket
+import net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ClientInformation
 import net.minecraft.server.level.ServerPlayer
+import net.minecraft.world.entity.player.ChatVisiblity
+import net.minecraft.world.entity.player.Player as NmsPlayer
 import net.minecraft.server.network.CommonListenerCookie
 import net.minecraft.server.network.ServerGamePacketListenerImpl
 import net.minecraft.world.entity.Entity
@@ -60,6 +64,7 @@ import org.bukkit.entity.EntityType
 import org.bukkit.metadata.FixedMetadataValue
 import org.bukkit.block.BlockState
 import org.bukkit.boss.BarColor
+import org.bukkit.boss.BarFlag
 import org.bukkit.boss.BarStyle
 import org.bukkit.boss.BossBar
 import org.bukkit.craftbukkit.CraftServer
@@ -86,6 +91,9 @@ import java.util.UUID
 @Suppress("unused")
 class NMSHandler_v1_21_R1 : NMSHandler {
     private val npcPlayers = mutableMapOf<UUID, ServerPlayer>()
+
+    /** Keeps a broken profile push to one console line instead of one per viewer per respawn. */
+    private var refreshFailureLogged = false
 
     private var npcTrackListenerRegistered = false
     
@@ -224,6 +232,15 @@ class NMSHandler_v1_21_R1 : NMSHandler {
     }
 
     companion object {
+    /**
+     * Every skin overlay turned on: hat, jacket, both sleeves, both trouser legs and the cape.
+     *
+     * A real player's client reports which layers it wants and the server copies that byte onto
+     * the entity; an NPC has no client, and [ClientInformation.createDefault] fills the field with
+     * **0**. That is why an unfixed player NPC renders only the base layer — a bald, jacketless
+     * version of a skin whose owner is wearing a hat.
+     */
+    private const val ALL_SKIN_LAYERS = 0x7F
         fun fireInventoryCloseEvent(serverPlayer: ServerPlayer) {
             try {
                 val reasonClass = Class.forName("org.bukkit.event.inventory.InventoryCloseEvent\$Reason")
@@ -353,10 +370,23 @@ class NMSHandler_v1_21_R1 : NMSHandler {
             // their UUID collides with them in entity and player-info tracking.
             val profileUuid = UUID.randomUUID()
             val profileName = "npc${profileUuid.toString().replace("-", "").take(13)}"
-            val profile = GameProfile(profileUuid, profileName)
-            spec.skin?.let { setProfileTexture(profile, it.value, it.signature) }
+            val profile = createProfile(
+                profileUuid,
+                profileName,
+                spec.skin?.let { TextureProperty(it.value, it.signature) },
+            )
 
-            val npc = ServerPlayer(server, world, profile, ClientInformation.createDefault())
+            // A texture that did not attach is the difference between "wearing someone's skin" and
+            // "a random default body", and it used to happen in complete silence.
+            if (spec.skin != null && getProfileTextures(profile).isEmpty()) {
+                UnifyCore.instance.logger.warning(
+                    "NPC '${spec.npcId}': skin texture could not be attached to its profile " +
+                        "(authlib: ${GameProfile::class.java.protectionDomain?.codeSource?.location}). " +
+                        "The body will render a default skin."
+                )
+            }
+
+            val npc = ServerPlayer(server, world, profile, npcClientInformation())
             positionServerPlayer(npc, spec.location)
             attachFakeConnection(server, npc, profile)
             npc.noPhysics = true
@@ -393,9 +423,13 @@ class NMSHandler_v1_21_R1 : NMSHandler {
             }
 
             profileUuid
-        } catch (e: Exception) {
-            UnifyCore.instance.logger.warning("Failed to spawn player NPC '${spec.npcId}': ${e.message}")
-            e.printStackTrace()
+        } catch (t: Throwable) {
+            // Throwable for the same reason as refreshNpcForViewer: version drift shows up as an
+            // Error, and an uncaught one here would abort the spawn after the old body was gone.
+            UnifyCore.instance.logger.warning(
+                "Failed to spawn player NPC '${spec.npcId}': ${t::class.java.simpleName}: ${t.message}"
+            )
+            t.printStackTrace()
             null
         }
     }
@@ -486,6 +520,22 @@ class NMSHandler_v1_21_R1 : NMSHandler {
      * arrived before our profile, the client fell back to a UUID-derived default skin and stayed
      * there, which is exactly what NPCs skinned before anyone was online did.
      */
+    /**
+     * [ClientInformation.createDefault] but with every skin layer switched on, so an NPC wearing
+     * someone's skin shows their hat and jacket instead of just the base layer. Mirrors the
+     * default for every other field.
+     */
+    private fun npcClientInformation(): ClientInformation = ClientInformation(
+        "en_us",
+        2,
+        ChatVisiblity.FULL,
+        true,
+        ALL_SKIN_LAYERS,
+        NmsPlayer.DEFAULT_MAIN_HAND,
+        false,
+        false,
+    )
+
     private fun refreshNpcForViewer(viewer: Player, npc: ServerPlayer) {
         try {
             val connection = (viewer as CraftPlayer).handle.connection
@@ -525,7 +575,19 @@ class NMSHandler_v1_21_R1 : NMSHandler {
                     }
                 }
             }, TAB_HIDE_DELAY_TICKS)
-        } catch (_: Exception) {
+        } catch (t: Throwable) {
+            // Throwable, not Exception: this module is compiled against 1.21.1 but serves every
+            // 1.21.x, so a moved constructor arrives as NoSuchMethodError — an Error, which the
+            // old `catch (_: Exception)` let straight through while still losing the diagnosis.
+            // Missing this packet is invisible: the server's own tracker still spawns the body,
+            // it just never learns the profile, so the NPC stands there wearing a default skin.
+            if (!refreshFailureLogged) {
+                refreshFailureLogged = true
+                UnifyCore.instance.logger.warning(
+                    "Failed to send NPC profile to ${viewer.name}: ${t::class.java.simpleName}: ${t.message}. " +
+                        "NPCs may render with default skins. Further failures will not be logged."
+                )
+            }
         }
     }
 
@@ -635,13 +697,62 @@ class NMSHandler_v1_21_R1 : NMSHandler {
             }.getOrNull()
     }
 
+    /**
+     * Builds the NPC's profile with its texture already attached.
+     *
+     * Attaching afterwards — `GameProfile(uuid, name)` and then `properties.put("textures", ...)` —
+     * only works while authlib's `PropertyMap` is mutable. Later authlib turned `GameProfile` into
+     * a record holding an immutable map, where that put throws and the NPC silently falls back to a
+     * default body; the v26 module abandoned mutation for exactly this reason.
+     *
+     * This module compiles against 1.21.1 (authlib 6.0.54, still mutable) but [NMSHandlerFactory]
+     * routes every 1.21.x here, so it has to cope with both: build the profile with its properties
+     * where that constructor exists, and mutate where it does not.
+     */
+    private fun createProfile(uuid: UUID, name: String, texture: TextureProperty?): GameProfile {
+        val property = texture?.let { createTextureProperty(it.value, it.signature) }
+
+        if (property != null) {
+            val prebuilt = runCatching {
+                val propertyMapClass = Class.forName("com.mojang.authlib.properties.PropertyMap")
+                val multimapClass = Class.forName("com.google.common.collect.Multimap")
+                val multimap = Class.forName("com.google.common.collect.ArrayListMultimap")
+                    .getMethod("create").invoke(null)
+                multimapClass.getMethod("put", Any::class.java, Any::class.java)
+                    .invoke(multimap, "textures", property)
+                val propertyMap = propertyMapClass.getConstructor(multimapClass).newInstance(multimap)
+                GameProfile::class.java
+                    .getConstructor(UUID::class.java, String::class.java, propertyMapClass)
+                    .newInstance(uuid, name, propertyMap) as GameProfile
+            }.getOrNull()
+            if (prebuilt != null) return prebuilt
+        }
+
+        val profile = GameProfile(uuid, name)
+        if (texture != null) setProfileTexture(profile, texture.value, texture.signature)
+        return profile
+    }
+
     private fun setProfileTexture(profile: GameProfile, value: String, signature: String?) {
-        val properties = getProfileProperties(profile) ?: return
+        val properties = getProfileProperties(profile)
+        if (properties == null) {
+            UnifyCore.instance.logger.warning("Skin: could not read the profile's property map.")
+            return
+        }
         removeTextureProperties(properties)
-        val property = createTextureProperty(value, signature) ?: return
+        val property = createTextureProperty(value, signature)
+        if (property == null) {
+            UnifyCore.instance.logger.warning("Skin: could not build the textures property.")
+            return
+        }
         runCatching {
             properties.javaClass.getMethod("put", Any::class.java, Any::class.java)
                 .invoke(properties, "textures", property)
+        }.onFailure {
+            // An immutable PropertyMap lands here — the case createProfile exists to avoid.
+            UnifyCore.instance.logger.warning(
+                "Skin: could not attach textures to the profile (${it::class.java.simpleName}: ${it.message})."
+            )
         }
     }
 
@@ -777,8 +888,10 @@ class NMSHandler_v1_21_R1 : NMSHandler {
             val team = PlayerTeam(scoreboard, teamName)
             
             team.displayName = Component.literal(teamName)
-            team.playerPrefix = Component.literal(prefix)
-            team.playerSuffix = Component.literal(suffix)
+            // parseText so &/§ color codes in the rank prefix actually render
+            team.playerPrefix = parseText(prefix)
+            team.playerSuffix = parseText(suffix)
+            // Last color in prefix colors the player name (e.g. trailing &f → white name)
             team.color = getChatFormatting(extractColorCode(prefix))
             team.nameTagVisibility = visibility
             team.collisionRule = Team.CollisionRule.NEVER
@@ -803,8 +916,14 @@ class NMSHandler_v1_21_R1 : NMSHandler {
         }
     }
     
+    /**
+     * Team color paints the **player name** (not the prefix text).
+     * Use the **last** real color in [text] so a trailing `&f` can force a white name
+     * while an earlier code still colors the rank prefix via [parseText].
+     */
     private fun extractColorCode(text: String): Char {
         val colorChars = "0123456789abcdefABCDEF"
+        var last = 'f'
         var i = 0
         while (i < text.length - 1) {
             val marker = text[i]
@@ -815,12 +934,12 @@ class NMSHandler_v1_21_R1 : NMSHandler {
                     continue
                 }
                 if (colorChars.contains(code)) {
-                    return code.lowercaseChar()
+                    last = code.lowercaseChar()
                 }
             }
             i++
         }
-        return 'f'
+        return last
     }
     
     private fun getChatFormatting(colorCode: Char): ChatFormatting {
@@ -871,11 +990,28 @@ class NMSHandler_v1_21_R1 : NMSHandler {
         bukkitBar.progress = bossBar.progress
         bukkitBar.color = toBukkitColor(bossBar.color)
         bukkitBar.style = toBukkitStyle(bossBar.style)
+        applyFlags(bukkitBar, bossBar)
     }
     
     private fun createBukkitBossBar(bossBar: UnifyBossBar): BossBar {
         return Bukkit.createBossBar(bossBar.title, toBukkitColor(bossBar.color), toBukkitStyle(bossBar.style)).apply {
             progress = bossBar.progress
+            applyFlags(this, bossBar)
+        }
+    }
+    
+    private fun applyFlags(bukkitBar: BossBar, bossBar: UnifyBossBar) {
+        for (flag in BossBarFlag.entries) {
+            val bukkitFlag = toBukkitFlag(flag)
+            if (bossBar.flags.contains(flag)) bukkitBar.addFlag(bukkitFlag) else bukkitBar.removeFlag(bukkitFlag)
+        }
+    }
+    
+    private fun toBukkitFlag(flag: BossBarFlag): BarFlag {
+        return when (flag) {
+            BossBarFlag.DARKEN_SKY -> BarFlag.DARKEN_SKY
+            BossBarFlag.PLAY_BOSS_MUSIC -> BarFlag.PLAY_BOSS_MUSIC
+            BossBarFlag.CREATE_FOG -> BarFlag.CREATE_FOG
         }
     }
     
@@ -949,14 +1085,16 @@ class NMSHandler_v1_21_R1 : NMSHandler {
     override fun updateHologram(player: Player, hologram: UnifyHologram) {
         val view = viewOf(player, hologram)
         val location = hologram.location
-        val sameAnchor = view != null &&
-            view.anchorWorld == location.world?.uid &&
-            view.anchorX == location.x &&
-            view.anchorY == location.y &&
-            view.anchorZ == location.z
-        // Only a pure text swap at a fixed position can be done without respawning.
-        if (view != null && sameAnchor && view.shape == shapeOf(hologram)) {
-            updateHologramLines(player, hologram, view)
+        // A different world means the viewer no longer has these entities at all, and a changed
+        // line shape means the ids no longer line up — both need a respawn. A move within one
+        // world does not: teleporting the existing entities lets the client interpolate towards
+        // the new position instead of the hologram blinking out and reappearing.
+        val sameWorld = view != null && view.anchorWorld == location.world?.uid
+        if (view != null && sameWorld && view.shape == shapeOf(hologram)) {
+            val moved = view.anchorX != location.x ||
+                view.anchorY != location.y ||
+                view.anchorZ != location.z
+            updateHologramLines(player, hologram, view, moved)
         } else {
             hideHologram(player, hologram)
             spawnHologram(player, hologram)
@@ -1054,10 +1192,14 @@ class NMSHandler_v1_21_R1 : NMSHandler {
         )
 
     /**
-     * Re-sends only the entity metadata for each line, leaving the entities themselves
-     * alone. The text changes in place with no despawn/respawn blink.
+     * Re-sends the entity metadata for each line, leaving the entities themselves alive. The
+     * text changes in place with no despawn/respawn blink.
+     *
+     * When [moved] is set, each line is also teleported to its new position. The client lerps a
+     * teleport over the following ticks, so a hologram that follows something — an NPC, a moving
+     * platform — glides instead of stepping, as long as the entities survive the update.
      */
-    private fun updateHologramLines(player: Player, hologram: UnifyHologram, view: HologramView) {
+    private fun updateHologramLines(player: Player, hologram: UnifyHologram, view: HologramView, moved: Boolean) {
         try {
             val lines = hologram.lines
             var currentY = hologram.location.y
@@ -1070,22 +1212,39 @@ class NMSHandler_v1_21_R1 : NMSHandler {
                 when (val line = lines[i]) {
                     is HologramLine.Text -> {
                         val armorStand = newTextStand(world, hologram.location.x, currentY, hologram.location.z, line.text)
+                        armorStand.id = entityId
                         armorStand.entityData.packAll()?.let {
                             connection.send(ClientboundSetEntityDataPacket(entityId, it))
                         }
+                        if (moved) connection.send(ClientboundTeleportEntityPacket(armorStand))
                         currentY -= TEXT_LINE_SPACING
                     }
                     is HologramLine.Item -> {
                         val nmsItem = CraftItemStack.asNMSCopy(line.itemStack)
                         val itemEntity = ItemEntity(world, hologram.location.x, currentY, hologram.location.z, nmsItem)
+                        itemEntity.id = entityId
                         itemEntity.isNoGravity = true
                         itemEntity.setNeverPickUp()
                         itemEntity.entityData.packAll()?.let {
                             connection.send(ClientboundSetEntityDataPacket(entityId, it))
                         }
+                        if (moved) connection.send(ClientboundTeleportEntityPacket(itemEntity))
                         currentY -= ITEM_LINE_SPACING
                     }
                 }
+            }
+
+            if (moved) {
+                // Anchor the view at where the client now believes the lines are, so the next
+                // update can tell a real move from a text-only refresh.
+                playerHologramEntities[player.uniqueId]?.put(
+                    hologram.uuid,
+                    view.copy(
+                        anchorX = hologram.location.x,
+                        anchorY = hologram.location.y,
+                        anchorZ = hologram.location.z,
+                    )
+                )
             }
         } catch (e: Exception) {
             e.printStackTrace()

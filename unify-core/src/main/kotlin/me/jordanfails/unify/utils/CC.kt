@@ -7,7 +7,6 @@ import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.TextDecoration
 import net.kyori.adventure.text.minimessage.MiniMessage
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
-import org.apache.commons.lang.StringEscapeUtils
 import org.apache.commons.lang.StringUtils
 import org.bukkit.ChatColor
 import java.text.MessageFormat
@@ -39,7 +38,7 @@ object CC {
     private val NMS_HANDLER: NMSHandler? by lazy { UnifyCore.instance.nms }
 
     @JvmStatic
-    val LONG_LINE = ChatColor.STRIKETHROUGH.toString() + org.apache.commons.lang3.StringUtils.repeat("-", 53)
+    val LONG_LINE = ChatColor.STRIKETHROUGH.toString() + StringUtils.repeat("-", 53)
 
     @JvmStatic
     val ADMIN_PREFIX = "${ChatColor.GRAY}[${ChatColor.DARK_RED}${ChatColor.BOLD}ADMIN${ChatColor.GRAY}] "
@@ -229,7 +228,19 @@ object CC {
     // ------------------------------------------------------------------------
 
     private val miniMessage: MiniMessage = MiniMessage.miniMessage()
-    private val legacySerializer: LegacyComponentSerializer = LegacyComponentSerializer.legacySection()
+    /**
+     * Section-code serializer that keeps hex exactly.
+     *
+     * Plain [LegacyComponentSerializer.legacySection] downsamples every hex to
+     * the nearest of the sixteen named colours, so text routed through
+     * MiniMessage came out a different colour from the same text routed through
+     * the legacy branch below. The `§x§r§r§g§g§b§b` form it writes instead is
+     * the one that branch already emits.
+     */
+    private val legacySerializer: LegacyComponentSerializer = LegacyComponentSerializer.builder()
+        .hexColors()
+        .useUnusualXRepeatedCharacterHexFormat()
+        .build()
     private val basicMiniTags = mapOf(
         "black" to "&0",
         "dark_blue" to "&1",
@@ -262,9 +273,15 @@ object CC {
      */
     fun translate(input: String): String {
         // Parse MiniMessage first, then serialize to section-colored legacy text for NMS compatibility.
-        if (input.contains('<') && input.contains('>')) {
+        //
+        // Only text carrying something MiniMessage would actually recognise takes
+        // that route. Any `<...>` used to be enough, which meant an ordinary line
+        // like "<Developer> Bob #FF5A09hello" was parsed as MiniMessage — where
+        // "<Developer>" is not a tag and a bare "#FF5A09" is not a colour — and
+        // came out with the hex sitting in the message as text.
+        if (MINI_MESSAGE_TAG.matcher(input).find()) {
             try {
-                return legacySerializer.serialize(miniMessage.deserialize(input))
+                return legacySerializer.serialize(miniMessage.deserialize(hexToMiniTags(input)))
             } catch (_: Exception) {
                 // Invalid MiniMessage input, fall back to legacy translation below.
             }
@@ -284,6 +301,26 @@ object CC {
 
         return ChatColor.translateAlternateColorCodes('&', msg)
     }
+
+    /**
+     * A tag MiniMessage would parse: a colour hex, or a lowercase tag name with
+     * optional arguments, opening or closing. Deliberately excludes things like
+     * `<Developer>`, which is a rank prefix rather than markup.
+     */
+    private val MINI_MESSAGE_TAG: Pattern =
+        Pattern.compile("<(?:/\\s*)?(?:#[0-9a-fA-F]{6}|[a-z][a-z0-9_-]*)(?::[^<>]*)?>")
+
+    /** Bare `#RRGGBB` written outside a tag, as the colour tag MiniMessage wants. */
+    private val BARE_HEX = Regex("(?<![<#0-9a-fA-F])#([0-9a-fA-F]{6})")
+
+    /**
+     * Rewrites loose hex so it survives the MiniMessage route.
+     *
+     * The legacy route below turns `#RRGGBB` into `&x&r&r...`; without this the
+     * same string would keep its colour when written on its own and lose it the
+     * moment anything tag-shaped was pasted next to it.
+     */
+    private fun hexToMiniTags(input: String): String = input.replace(BARE_HEX, "<#$1>")
 
     private fun convertBasicMiniTagsToLegacy(input: String): String {
         var output = input

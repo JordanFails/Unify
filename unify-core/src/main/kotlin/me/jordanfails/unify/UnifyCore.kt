@@ -4,6 +4,7 @@ import me.jordanfails.unify.utils.Tasks
 import me.jordanfails.unify.menu.anvil.AnvilListener
 import me.jordanfails.unify.menu.listener.ButtonListeners
 import me.jordanfails.unify.menu.menus.listener.SelectItemListeners
+import me.jordanfails.unify.screen.listener.ScreenListeners
 import me.jordanfails.unify.nametag.NametagHandler
 import me.jordanfails.unify.nametag.NametagListener
 import me.jordanfails.unify.nms.NMSHandler
@@ -15,6 +16,10 @@ import me.jordanfails.unify.tab.TabHandler
 import me.jordanfails.unify.tab.TabListener
 import co.aikar.commands.PaperCommandManager
 import me.jordanfails.unify.acf.ACFCommandController
+import me.jordanfails.unify.bossbar.BossBarHandler
+import me.jordanfails.unify.bossbar.BossBarListener
+import me.jordanfails.unify.bossbar.BossBarManager
+import me.jordanfails.unify.commands.LoreCommand
 import me.jordanfails.unify.commands.PingCommand
 import me.jordanfails.unify.commands.UnifyAdminCommand
 import me.jordanfails.unify.hologram.HologramManager
@@ -47,6 +52,7 @@ class UnifyCore : JavaPlugin() {
         setupNametags()
         setupScoreboards()
         setupTab()
+        setupBossBars()
         setupMenu()
         setupHolograms()
         setupNPCs()
@@ -54,6 +60,8 @@ class UnifyCore : JavaPlugin() {
     }
 
     override fun onDisable() {
+        BossBarHandler.clearAll()
+        BossBarManager.disable()
         NPCRegistry.disable()
         HologramManager.disable()
     }
@@ -78,6 +86,7 @@ class UnifyCore : JavaPlugin() {
             SelectItemListeners,
             ButtonListeners,
             AnvilListener,
+            ScreenListeners,
         ).forEach { listener -> this.server.pluginManager.registerEvents(listener, this) }
     }
 
@@ -86,6 +95,7 @@ class UnifyCore : JavaPlugin() {
             HologramCommand(),
             NPCCommand(),
             PingCommand(),
+            LoreCommand(),
             UnifyAdminCommand(),
         ).forEach { commandManager.registerCommand(it) }
     }
@@ -101,6 +111,12 @@ class UnifyCore : JavaPlugin() {
     private fun setupScoreboards() {
         ScoreboardHandler.initialLoad()
         server.pluginManager.registerEvents(ScoreboardListener, this)
+    }
+
+    private fun setupBossBars() {
+        BossBarHandler.initialLoad()
+        BossBarManager.enable(this)
+        server.pluginManager.registerEvents(BossBarListener, this)
     }
 
     private fun setupTab() {

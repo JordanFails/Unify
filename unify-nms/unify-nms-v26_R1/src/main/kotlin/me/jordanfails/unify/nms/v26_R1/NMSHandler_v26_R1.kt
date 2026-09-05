@@ -8,12 +8,14 @@ import com.mojang.authlib.properties.Property
 import com.mojang.authlib.properties.PropertyMap
 import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.bossbar.BossBarColor
+import me.jordanfails.unify.bossbar.BossBarFlag
 import me.jordanfails.unify.bossbar.BossBarStyle
 import me.jordanfails.unify.bossbar.UnifyBossBar
 import me.jordanfails.unify.hologram.HologramLine
 import me.jordanfails.unify.hologram.UnifyHologram
 import me.jordanfails.unify.menu.anvil.AnvilHandle
 import me.jordanfails.unify.nms.NMSHandler
+import me.jordanfails.unify.screen.Screen
 import me.jordanfails.unify.npc.BukkitNpcBody
 import me.jordanfails.unify.npc.NPCRegistry
 import me.jordanfails.unify.npc.NPCSkin
@@ -35,6 +37,7 @@ import net.minecraft.network.protocol.game.ClientboundAddEntityPacket
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket
 import net.minecraft.network.protocol.game.ClientboundResetScorePacket
 import net.minecraft.network.protocol.game.ClientboundSetDisplayObjectivePacket
+import net.minecraft.network.protocol.game.ClientboundEntityPositionSyncPacket
 import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket
 import net.minecraft.network.protocol.game.ClientboundSetObjectivePacket
 import net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket
@@ -42,7 +45,10 @@ import net.minecraft.network.protocol.game.ClientboundSetScorePacket
 import net.minecraft.network.protocol.game.ClientboundTabListPacket
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ClientInformation
+import net.minecraft.server.level.ParticleStatus
 import net.minecraft.server.level.ServerPlayer
+import net.minecraft.world.entity.player.ChatVisiblity
+import net.minecraft.world.entity.player.Player as NmsPlayer
 import net.minecraft.server.network.CommonListenerCookie
 import net.minecraft.server.network.ServerGamePacketListenerImpl
 import net.minecraft.world.entity.Entity
@@ -69,6 +75,7 @@ import org.bukkit.event.Listener
 import org.bukkit.metadata.FixedMetadataValue
 import org.bukkit.block.BlockState
 import org.bukkit.boss.BarColor
+import org.bukkit.boss.BarFlag
 import org.bukkit.boss.BarStyle
 import org.bukkit.boss.BossBar
 import org.bukkit.craftbukkit.CraftServer
@@ -228,6 +235,15 @@ class NMSHandler_v26_R1 : NMSHandler {
     }
 
     companion object {
+    /**
+     * Every skin overlay turned on: hat, jacket, both sleeves, both trouser legs and the cape.
+     *
+     * A real player's client reports which layers it wants and the server copies that byte onto
+     * the entity; an NPC has no client, and [ClientInformation.createDefault] fills the field with
+     * **0**. That is why an unfixed player NPC renders only the base layer — a bald, jacketless
+     * version of a skin whose owner is wearing a hat.
+     */
+    private const val ALL_SKIN_LAYERS = 0x7F
         fun fireInventoryCloseEvent(serverPlayer: ServerPlayer) {
             try {
                 val reasonClass = Class.forName("org.bukkit.event.inventory.InventoryCloseEvent\$Reason")
@@ -417,7 +433,7 @@ class NMSHandler_v26_R1 : NMSHandler {
                 spec.skin?.let { TextureProperty(it.value, it.signature) },
             )
 
-            val npc = ServerPlayer(server, world, profile, ClientInformation.createDefault())
+            val npc = ServerPlayer(server, world, profile, npcClientInformation())
             positionServerPlayer(npc, spec.location)
             attachFakeConnection(server, npc, profile)
             npc.noPhysics = true
@@ -580,6 +596,23 @@ class NMSHandler_v26_R1 : NMSHandler {
      * arrived before our profile, the client fell back to a UUID-derived default skin and stayed
      * there, which is exactly what NPCs skinned before anyone was online did.
      */
+    /**
+     * [ClientInformation.createDefault] but with every skin layer switched on, so an NPC wearing
+     * someone's skin shows their hat and jacket instead of just the base layer. Mirrors the
+     * default for every other field.
+     */
+    private fun npcClientInformation(): ClientInformation = ClientInformation(
+        "en_us",
+        2,
+        ChatVisiblity.FULL,
+        true,
+        ALL_SKIN_LAYERS,
+        NmsPlayer.DEFAULT_MAIN_HAND,
+        false,
+        false,
+        ParticleStatus.ALL,
+    )
+
     private fun refreshNpcForViewer(viewer: Player, npc: ServerPlayer) {
         try {
             val connection = (viewer as CraftPlayer).handle.connection
@@ -823,8 +856,8 @@ class NMSHandler_v26_R1 : NMSHandler {
             val team = PlayerTeam(scoreboard, teamName)
             
             team.displayName = Component.literal(teamName)
-            team.setPlayerPrefix(Component.literal(prefix))
-            team.setPlayerSuffix(Component.literal(suffix))
+            team.setPlayerPrefix(parseText(prefix))
+            team.setPlayerSuffix(parseText(suffix))
             setTeamColor(team, getChatFormatting(extractColorCode(prefix)))
             team.setNameTagVisibility(visibility)
             team.setCollisionRule(Team.CollisionRule.NEVER)
@@ -849,8 +882,14 @@ class NMSHandler_v26_R1 : NMSHandler {
         }
     }
     
+    /**
+     * Team color paints the **player name** (not the prefix text).
+     * Use the **last** real color in [text] so a trailing `&f` can force a white name
+     * while an earlier code still colors the rank prefix via [parseText].
+     */
     private fun extractColorCode(text: String): Char {
         val colorChars = "0123456789abcdefABCDEF"
+        var last = 'f'
         var i = 0
         while (i < text.length - 1) {
             val marker = text[i]
@@ -861,12 +900,12 @@ class NMSHandler_v26_R1 : NMSHandler {
                     continue
                 }
                 if (colorChars.contains(code)) {
-                    return code.lowercaseChar()
+                    last = code.lowercaseChar()
                 }
             }
             i++
         }
-        return 'f'
+        return last
     }
     
     private fun getChatFormatting(colorCode: Char): ChatFormatting {
@@ -925,11 +964,28 @@ class NMSHandler_v26_R1 : NMSHandler {
         bukkitBar.progress = bossBar.progress
         bukkitBar.color = toBukkitColor(bossBar.color)
         bukkitBar.style = toBukkitStyle(bossBar.style)
+        applyFlags(bukkitBar, bossBar)
     }
     
     private fun createBukkitBossBar(bossBar: UnifyBossBar): BossBar {
         return Bukkit.createBossBar(bossBar.title, toBukkitColor(bossBar.color), toBukkitStyle(bossBar.style)).apply {
             progress = bossBar.progress
+            applyFlags(this, bossBar)
+        }
+    }
+    
+    private fun applyFlags(bukkitBar: BossBar, bossBar: UnifyBossBar) {
+        for (flag in BossBarFlag.entries) {
+            val bukkitFlag = toBukkitFlag(flag)
+            if (bossBar.flags.contains(flag)) bukkitBar.addFlag(bukkitFlag) else bukkitBar.removeFlag(bukkitFlag)
+        }
+    }
+    
+    private fun toBukkitFlag(flag: BossBarFlag): BarFlag {
+        return when (flag) {
+            BossBarFlag.DARKEN_SKY -> BarFlag.DARKEN_SKY
+            BossBarFlag.PLAY_BOSS_MUSIC -> BarFlag.PLAY_BOSS_MUSIC
+            BossBarFlag.CREATE_FOG -> BarFlag.CREATE_FOG
         }
     }
     
@@ -1064,18 +1120,20 @@ class NMSHandler_v26_R1 : NMSHandler {
         }
     }
     
+    /**
+     * Updates each line in place: new metadata for the text, and a position sync so the client
+     * interpolates towards the new spot. Removing and re-adding the entities instead makes the
+     * hologram blink and snap on every refresh, which is very visible on one that follows an NPC.
+     */
     private fun updateHologramLines(player: Player, hologram: UnifyHologram, entityIds: List<Int>) {
         try {
             val lines = hologram.lines
             var currentY = hologram.location.y
             val world = (player.world as CraftWorld).handle
             val connection = (player as CraftPlayer).handle.connection
-            
+
             for (i in lines.indices) {
                 val entityId = entityIds[i]
-                // 1.21+ changed teleport packet internals between minor releases.
-                // Re-spawn each existing line entity with the same id to avoid brittle teleport constructors.
-                connection.send(ClientboundRemoveEntitiesPacket(entityId))
                 when (val line = lines[i]) {
                     is HologramLine.Text -> {
                         val armorStand = ArmorStand(world, hologram.location.x, currentY, hologram.location.z)
@@ -1083,28 +1141,16 @@ class NMSHandler_v26_R1 : NMSHandler {
                         armorStand.customName = parseText(line.text)
                         armorStand.isCustomNameVisible = true
                         armorStand.isInvisible = true
+                        // Must match spawnHologram exactly: a flag missing here (small, in
+                        // particular) changes the nameplate offset and the line jumps.
+                        armorStand.isNoGravity = true
+                        armorStand.isSmall = true
                         armorStand.isMarker = true
-                        
-                        val addPacket = ClientboundAddEntityPacket(
-                            entityId,
-                            armorStand.uuid,
-                            armorStand.x,
-                            armorStand.y,
-                            armorStand.z,
-                            armorStand.xRot,
-                            armorStand.yRot,
-                            armorStand.type,
-                            0,
-                            armorStand.deltaMovement,
-                            armorStand.yHeadRot.toDouble()
-                        )
-                        connection.send(addPacket)
 
-                        val dataValues = armorStand.entityData.packAll()
-                        if (dataValues != null) {
-                            val metaPacket = ClientboundSetEntityDataPacket(entityId, dataValues)
-                            connection.send(metaPacket)
+                        armorStand.entityData.packAll()?.let {
+                            connection.send(ClientboundSetEntityDataPacket(entityId, it))
                         }
+                        connection.send(ClientboundEntityPositionSyncPacket.of(armorStand))
                         currentY -= 0.25
                     }
                     is HologramLine.Item -> {
@@ -1114,26 +1160,10 @@ class NMSHandler_v26_R1 : NMSHandler {
                         itemEntity.isNoGravity = true
                         itemEntity.setNeverPickUp()
 
-                        val addPacket = ClientboundAddEntityPacket(
-                            entityId,
-                            itemEntity.uuid,
-                            itemEntity.x,
-                            itemEntity.y,
-                            itemEntity.z,
-                            itemEntity.xRot,
-                            itemEntity.yRot,
-                            itemEntity.type,
-                            0,
-                            itemEntity.deltaMovement,
-                            itemEntity.yHeadRot.toDouble()
-                        )
-                        connection.send(addPacket)
-                        
-                        val dataValues = itemEntity.entityData.packAll()
-                        if (dataValues != null) {
-                            val metaPacket = ClientboundSetEntityDataPacket(entityId, dataValues)
-                            connection.send(metaPacket)
+                        itemEntity.entityData.packAll()?.let {
+                            connection.send(ClientboundSetEntityDataPacket(entityId, it))
                         }
+                        connection.send(ClientboundEntityPositionSyncPacket.of(itemEntity))
                         currentY -= 0.5
                     }
                 }
@@ -1334,5 +1364,14 @@ class NMSHandler_v26_R1 : NMSHandler {
         } catch (e: Exception) {
             e.printStackTrace()
         }
+    }
+
+    override fun supportsCustomScreens(): Boolean = true
+
+    override fun openCustomScreen(player: Player, screen: Screen): Boolean =
+        PaperDialogScreens.open(player, screen)
+
+    override fun closeCustomScreen(player: Player) {
+        PaperDialogScreens.close(player)
     }
 }

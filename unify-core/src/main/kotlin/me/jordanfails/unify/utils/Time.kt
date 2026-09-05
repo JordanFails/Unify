@@ -33,6 +33,16 @@ object Time {
     private val SECONDS_FORMAT = ThreadLocal.withInitial { DecimalFormat("0") }
     private val TRAILING_FORMAT = ThreadLocal.withInitial { DecimalFormat("0.0") }
 
+    /** Singular unit names; the plural is the same word plus an `s`. */
+    private data class DurationUnit(val millis: Long, val short: String, val full: String)
+
+    private val UNITS = listOf(
+        DurationUnit(DAY_MS, "day", "day"),
+        DurationUnit(HOUR_MS, "hr", "hour"),
+        DurationUnit(MINUTE_MS, "min", "minute"),
+        DurationUnit(SECOND_MS, "sec", "second"),
+    )
+
     /** Current epoch millis. Returns e.g. `1710000000000`. */
     fun now(): Long = System.currentTimeMillis()
 
@@ -73,37 +83,71 @@ object Time {
     fun getDate(date: Long): String = fullDate(date)
 
     /**
-     * Long human-readable duration (all non-zero units).
-     * Returns e.g. `"1 day 2 hrs 5 mins 3 secs"`, `"Permanent"`, or `"0s"`.
+     * Long human-readable duration (all non-zero units), joined with commas and a trailing "and".
+     * [maxUnits] caps how many units are shown; `0` shows every non-zero one.
+     * Returns e.g. `"1 hr and 30 mins"`, `"1 day, 2 hrs and 5 mins"`, `"Permanent"`, or `"0s"`.
      */
-    fun formatDuration(millis: Long): String {
+    @JvmOverloads
+    fun formatDuration(millis: Long, maxUnits: Int = 0): String {
         if (millis == PERMANENT) return "Permanent"
         if (millis <= 0L) return "0s"
+        return joinUnits(splitUnits(millis, full = false, maxUnits = maxUnits))
+    }
 
-        var time = millis
-        val days = TimeUnit.MILLISECONDS.toDays(time).also { time -= TimeUnit.DAYS.toMillis(it) }
-        val hours = TimeUnit.MILLISECONDS.toHours(time).also { time -= TimeUnit.HOURS.toMillis(it) }
-        val minutes = TimeUnit.MILLISECONDS.toMinutes(time).also { time -= TimeUnit.MINUTES.toMillis(it) }
-        val seconds = TimeUnit.MILLISECONDS.toSeconds(time)
+    /**
+     * Same as [formatDuration] but spells the units out in full.
+     * Returns e.g. `"1 hour and 30 minutes"`, `"2 days, 3 hours and 1 second"`, or `"Permanent"`.
+     */
+    @JvmOverloads
+    fun formatDurationLong(millis: Long, maxUnits: Int = 0): String {
+        if (millis == PERMANENT) return "Permanent"
+        if (millis <= 0L) return "0 seconds"
+        return joinUnits(splitUnits(millis, full = true, maxUnits = maxUnits))
+    }
 
-        val parts = mutableListOf<String>()
-        if (days > 0) parts += "$days day${if (days != 1L) "s" else ""}"
-        if (hours > 0) parts += "$hours hr${if (hours != 1L) "s" else ""}"
-        if (minutes > 0) parts += "$minutes min${if (minutes != 1L) "s" else ""}"
-        if (seconds > 0 || parts.isEmpty()) parts += "$seconds sec${if (seconds != 1L) "s" else ""}"
+    /**
+     * Joins unit labels the way a sentence reads: the last two share an "and", the rest use commas.
+     * `["1 hour", "30 minutes"]` → `"1 hour and 30 minutes"`.
+     */
+    fun joinUnits(parts: List<String>): String = when (parts.size) {
+        0 -> ""
+        1 -> parts[0]
+        else -> parts.dropLast(1).joinToString(", ") + " and " + parts.last()
+    }
 
-        return parts.joinToString(" ")
+    /**
+     * Breaks [millis] into per-unit labels, largest first, skipping empty units.
+     * `5400000` → `["1 hour", "30 minutes"]` when [full], else `["1 hr", "30 mins"]`.
+     */
+    @JvmOverloads
+    fun splitUnits(millis: Long, full: Boolean = true, maxUnits: Int = 0): List<String> {
+        var time = millis.coerceAtLeast(0L)
+        val labels = mutableListOf<String>()
+        for (unit in UNITS) {
+            val amount = time / unit.millis
+            time %= unit.millis
+            if (amount <= 0L) continue
+            labels += unitLabel(amount, unit, full)
+            if (maxUnits > 0 && labels.size >= maxUnits) break
+        }
+        if (labels.isEmpty()) labels += unitLabel(0L, UNITS.last(), full)
+        return labels
+    }
+
+    private fun unitLabel(amount: Long, unit: DurationUnit, full: Boolean): String {
+        val name = if (full) unit.full else unit.short
+        return "$amount $name${if (amount != 1L) "s" else ""}"
     }
 
     /**
      * Alias for [formatDuration].
-     * Returns e.g. `"1 day 2 hrs 5 mins 3 secs"`.
+     * Returns e.g. `"1 day, 2 hrs, 5 mins and 3 secs"`.
      */
     fun getDuration(input: Long): String = formatDuration(input)
 
     /**
      * Alias for [formatDuration].
-     * Returns e.g. `"1 day 2 hrs 5 mins 3 secs"`.
+     * Returns e.g. `"1 day, 2 hrs, 5 mins and 3 secs"`.
      */
     fun formatMillis(millis: Long): String = formatDuration(millis)
 
@@ -173,6 +217,52 @@ object Time {
      * Returns e.g. `"01:05"` or `"01:02:03"`.
      */
     fun formatMillisBackdrop(millis: Long): String = formatDigital(millis, false)
+
+    /**
+     * How long ago [timestamp] was, recomputed every call.
+     * Returns e.g. `"10 minutes and 30 seconds ago"`, `"in 1 hour and 5 minutes"`, or `"just now"`.
+     *
+     * [maxUnits] caps how many units are shown, so `2` gives `"10 minutes and 30 seconds"` rather
+     * than spelling out every remaining unit. Pass `full = false` for the `hr`/`min` shorthand.
+     */
+    @JvmOverloads
+    fun relative(timestamp: Long, full: Boolean = true, maxUnits: Int = 2): String {
+        val diff = now() - timestamp
+        if (abs(diff) < SECOND_MS) return "just now"
+        val label = joinUnits(splitUnits(abs(diff), full = full, maxUnits = maxUnits))
+        return if (diff < 0) "in $label" else "$label ago"
+    }
+
+    /**
+     * A live handle on [timestamp] that re-reads the clock on every call, so a lore line or
+     * scoreboard entry rebuilt each tick shows a label that counts up on its own.
+     *
+     */
+    @JvmOverloads
+    fun since(timestamp: Long, full: Boolean = true, maxUnits: Int = 2): Relative =
+        Relative(timestamp, full, maxUnits)
+
+    /**
+     * Self-updating relative label for a fixed point in time. Nothing is cached: [elapsed] and
+     * [format] read the clock when you ask, and [toString] delegates to [format] so the value can
+     * be dropped straight into a string template.
+     */
+    class Relative @JvmOverloads constructor(
+        val timestamp: Long,
+        val full: Boolean = true,
+        val maxUnits: Int = 2,
+    ) {
+        /** Millis since [timestamp]; negative when it is still in the future. */
+        fun elapsed(): Long = now() - timestamp
+
+        /** Duration only, no `ago` / `in` wording. Returns e.g. `"10 minutes and 30 seconds"`. */
+        fun duration(): String = joinUnits(splitUnits(abs(elapsed()), full = full, maxUnits = maxUnits))
+
+        /** Full label. Returns e.g. `"10 minutes and 30 seconds ago"` or `"just now"`. */
+        fun format(): String = relative(timestamp, full, maxUnits)
+
+        override fun toString(): String = format()
+    }
 
     /**
      * Relative compact time from now to [targetMillis].

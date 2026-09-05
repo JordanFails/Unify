@@ -3,6 +3,7 @@ package me.jordanfails.unify.nms
 import me.jordanfails.unify.bossbar.UnifyBossBar
 import me.jordanfails.unify.hologram.UnifyHologram
 import me.jordanfails.unify.menu.anvil.AnvilHandle
+import me.jordanfails.unify.screen.Screen
 import me.jordanfails.unify.npc.BukkitNpcBody
 import me.jordanfails.unify.npc.NPCEquipmentSlot
 import me.jordanfails.unify.npc.NPCPose
@@ -248,4 +249,21 @@ interface NMSHandler {
      * this to add [EntityType.PLAYER].
      */
     fun supportsNpcEntityType(type: EntityType): Boolean = BukkitNpcBody.supports(type)
+
+    // --- Native custom screens (Minecraft dialogs, 1.21.6+ / 26.x) ---
+
+    /**
+     * Whether this version can show Minecraft's native custom screens (dialogs).
+     * False on everything before 1.21.6.
+     */
+    fun supportsCustomScreens(): Boolean = false
+
+    /**
+     * Show [screen] to [player] as a native custom screen.
+     * @return true if the screen was shown
+     */
+    fun openCustomScreen(player: Player, screen: Screen): Boolean = false
+
+    /** Close the player's currently open native custom screen, if any. */
+    fun closeCustomScreen(player: Player) {}
 }

@@ -1,13 +1,15 @@
 package me.jordanfails.unify.menu.pagebuttons
 
-import me.jordanfails.unify.menu.pagination.PaginatedMenu
+import com.cryptomorin.xseries.XMaterial
 import me.jordanfails.unify.menu.Button
+import me.jordanfails.unify.menu.pagination.PaginatedMenu
 import me.jordanfails.unify.menu.pagination.ViewAllPagesMenu
 import me.jordanfails.unify.nms.LegacyColorDataType
 import me.jordanfails.unify.nms.LegacyItemColor
 import me.jordanfails.unify.nms.NMSHandlerFactory
 import me.jordanfails.unify.utils.CC
 import me.jordanfails.unify.utils.ItemBuilder
+import me.jordanfails.unify.utils.get
 import org.bukkit.Material
 import org.bukkit.entity.Player
 import org.bukkit.event.inventory.ClickType
@@ -63,9 +65,10 @@ class CarpetPageButton(private val mod: Int, private val menu: PaginatedMenu) : 
 
     override fun getMaterial(player: Player): Material {
         return if (!hasNext(player)) {
-            Material.GRAY_CARPET // last/only page – gray
+            // Disabled / only page — gray stained glass to match other page button types
+            XMaterial.GRAY_STAINED_GLASS_PANE.get() ?: Material.GRAY_STAINED_GLASS_PANE
         } else {
-            Material.BLUE_CARPET // has more pages – dark blue
+            Material.BLUE_CARPET
         }
     }
 

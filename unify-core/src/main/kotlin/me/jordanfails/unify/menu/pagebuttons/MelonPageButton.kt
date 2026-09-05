@@ -1,17 +1,20 @@
 package me.jordanfails.unify.menu.pagebuttons
 
-import me.jordanfails.unify.menu.pagination.PaginatedMenu
+import com.cryptomorin.xseries.XMaterial
 import me.jordanfails.unify.menu.Button
+import me.jordanfails.unify.menu.pagination.PaginatedMenu
 import me.jordanfails.unify.menu.pagination.ViewAllPagesMenu
+import me.jordanfails.unify.nms.LegacyColorDataType
+import me.jordanfails.unify.nms.LegacyItemColor
+import me.jordanfails.unify.nms.NMSHandlerFactory
 import me.jordanfails.unify.utils.CC
 import me.jordanfails.unify.utils.ItemBuilder
+import me.jordanfails.unify.utils.get
 import org.bukkit.Material
 import org.bukkit.entity.Player
 import org.bukkit.event.inventory.ClickType
 import org.bukkit.inventory.InventoryView
 import org.bukkit.inventory.ItemStack
-import java.util.*
-
 
 class MelonPageButton(private val mod: Int, private val menu: PaginatedMenu) : Button() {
 
@@ -35,18 +38,17 @@ class MelonPageButton(private val mod: Int, private val menu: PaginatedMenu) : B
     }
 
     override fun getName(player: Player): String {
-
-        if(!this.hasNext(player)) {
-            return if(this.mod > 0) {
+        if (!hasNext(player)) {
+            return if (mod > 0) {
                 CC.translate("&7Last Page")
             } else {
                 CC.translate("&7First Page")
             }
         }
 
-        return if(this.mod > 0) {
+        return if (mod > 0) {
             CC.translate("&e&lNext Page ->")
-        }else{
+        } else {
             CC.translate("&e&l<- Previous Page")
         }
     }
@@ -56,20 +58,26 @@ class MelonPageButton(private val mod: Int, private val menu: PaginatedMenu) : B
     }
 
     override fun getDamageValue(player: Player): Byte {
+        if (!hasNext(player)) {
+            return NMSHandlerFactory.getHandler()
+                ?.getLegacyColorData(LegacyItemColor.GRAY, LegacyColorDataType.BLOCK)
+                ?: LegacyItemColor.GRAY.blockData
+        }
         return 0.toByte()
     }
 
     override fun getMaterial(player: Player): Material {
+        if (!hasNext(player)) {
+            return XMaterial.GRAY_STAINED_GLASS_PANE.get() ?: Material.GRAY_STAINED_GLASS_PANE
+        }
         return Material.MELON_SLICE
     }
 
     override fun getButtonItem(player: Player): ItemStack {
-        return getDescription(player).let {
-            ItemBuilder(getMaterial(player), 1)
-                .name(CC.translate(getName(player)))
-                .lore(it)
-                .build()
-        }
+        return ItemBuilder(getMaterial(player), 1)
+            .data(getDamageValue(player).toShort())
+            .name(CC.translate(getName(player)))
+            .lore(getDescription(player))
+            .build()
     }
-
 }

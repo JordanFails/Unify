@@ -22,8 +22,12 @@ class UnifyHologram(
     var lines: List<HologramLine>
         get() = _lines.toList()
         set(value) {
+            val translated = value.map { translateLine(it) }
+            // Callers that regenerate their lines on a timer hand us the same text most ticks.
+            // Re-sending it costs a metadata packet per line per viewer for no visible change.
+            if (_lines == translated) return
             _lines.clear()
-            _lines.addAll(value.map { translateLine(it) })
+            _lines.addAll(translated)
             refresh()
         }
 
@@ -39,9 +43,13 @@ class UnifyHologram(
     }
 
     fun teleport(location: Location) {
-        this.location = location
+        if (this.location == location) return
+        this.location = location.clone()
         refresh()
-        HologramManager.markDirty()
+        // Only holograms the manager owns live in holograms.yml. Saving for an unregistered one
+        // (an NPC's hologram, say) rewrites the whole file on the main thread for nothing, and
+        // those are exactly the ones that move every tick.
+        if (getId() != null) HologramManager.markDirty()
     }
     
     // --- Text Line Methods ---

@@ -46,7 +46,7 @@ dependencies {
     compileOnly(kotlin("reflect"))
     implementation("com.github.cryptomorin:XSeries:13.7.1")
     implementation("co.aikar:acf-paper:0.5.1-SNAPSHOT")
-    implementation("io.github.jordanfails:honey:1.1.2")
+    implementation("io.github.jordanfails:honey:1.1.3")
     // Unify exposes the official NBT-API types directly for entity, tile-entity,
     // and item NBT. The NBTAPI plugin supplies this dependency at runtime.
     compileOnly("de.tr7zw:item-nbt-api-plugin:2.15.5")
@@ -71,7 +71,12 @@ fun com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar.excludeKotlinRunt
     // Bundling it here causes LinkageErrors when other plugins call honey APIs across class loaders.
     exclude("kotlin/**")
     exclude("kotlinx/**")
-    exclude("META-INF/*.kotlin_module")
+    // Only the Kotlin runtime's own module metadata. Unify's `unify-core.kotlin_module` MUST stay:
+    // without it, consumers can still see our classes but NOT a single top-level declaration from
+    // this module — the menu DSL's `button { }` / `filler()` and every top-level extension become
+    // unresolvable at compile time. A blanket `META-INF/*.kotlin_module` exclude hid the whole DSL.
+    exclude("META-INF/kotlin-*.kotlin_module")
+    exclude("META-INF/kotlinx-*.kotlin_module")
     exclude("META-INF/kotlin/**")
 }
 

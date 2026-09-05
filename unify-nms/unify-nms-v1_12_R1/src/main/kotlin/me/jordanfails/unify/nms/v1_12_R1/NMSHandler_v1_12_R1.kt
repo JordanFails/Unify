@@ -3,6 +3,7 @@ package me.jordanfails.unify.nms.v1_12_R1
 import com.mojang.authlib.GameProfile
 import com.mojang.authlib.properties.Property
 import me.jordanfails.unify.bossbar.BossBarColor
+import me.jordanfails.unify.bossbar.BossBarFlag
 import me.jordanfails.unify.bossbar.BossBarStyle
 import me.jordanfails.unify.bossbar.UnifyBossBar
 import me.jordanfails.unify.hologram.HologramLine
@@ -16,6 +17,7 @@ import org.bukkit.Bukkit
 import org.bukkit.Location
 import org.bukkit.block.BlockState
 import org.bukkit.boss.BarColor
+import org.bukkit.boss.BarFlag
 import org.bukkit.boss.BarStyle
 import org.bukkit.boss.BossBar
 import org.bukkit.craftbukkit.v1_12_R1.CraftWorld
@@ -421,11 +423,28 @@ class NMSHandler_v1_12_R1 : NMSHandler {
         bukkitBar.progress = bossBar.progress
         bukkitBar.color = toBukkitColor(bossBar.color)
         bukkitBar.style = toBukkitStyle(bossBar.style)
+        applyFlags(bukkitBar, bossBar)
     }
     
     private fun createBukkitBossBar(bossBar: UnifyBossBar): BossBar {
         return Bukkit.createBossBar(bossBar.title, toBukkitColor(bossBar.color), toBukkitStyle(bossBar.style)).apply {
             progress = bossBar.progress
+            applyFlags(this, bossBar)
+        }
+    }
+    
+    private fun applyFlags(bukkitBar: BossBar, bossBar: UnifyBossBar) {
+        for (flag in BossBarFlag.entries) {
+            val bukkitFlag = toBukkitFlag(flag)
+            if (bossBar.flags.contains(flag)) bukkitBar.addFlag(bukkitFlag) else bukkitBar.removeFlag(bukkitFlag)
+        }
+    }
+    
+    private fun toBukkitFlag(flag: BossBarFlag): BarFlag {
+        return when (flag) {
+            BossBarFlag.DARKEN_SKY -> BarFlag.DARKEN_SKY
+            BossBarFlag.PLAY_BOSS_MUSIC -> BarFlag.PLAY_BOSS_MUSIC
+            BossBarFlag.CREATE_FOG -> BarFlag.CREATE_FOG
         }
     }
     
@@ -549,6 +568,11 @@ class NMSHandler_v1_12_R1 : NMSHandler {
                         armorStand.customName = me.jordanfails.unify.utils.CC.translate(line.text)
                         armorStand.customNameVisible = true
                         armorStand.isInvisible = true
+                        // Must match spawnHologram exactly: a flag missing here changes the
+                        // nameplate offset (small) or lets the client apply gravity, so the line
+                        // shifts and drifts on the first update.
+                        armorStand.isNoGravity = true
+                        armorStand.isSmall = true
                         armorStand.isMarker = true
                         
                         val metaPacket = PacketPlayOutEntityMetadata(entityId, armorStand.dataWatcher, true)

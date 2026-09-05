@@ -5,6 +5,7 @@ import com.mojang.authlib.properties.Property
 import io.papermc.paper.adventure.PaperAdventure
 import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.bossbar.BossBarColor
+import me.jordanfails.unify.bossbar.BossBarFlag
 import me.jordanfails.unify.bossbar.BossBarStyle
 import me.jordanfails.unify.bossbar.UnifyBossBar
 import me.jordanfails.unify.hologram.HologramLine
@@ -48,6 +49,7 @@ import org.bukkit.Bukkit
 import org.bukkit.Location
 import org.bukkit.block.BlockState
 import org.bukkit.boss.BarColor
+import org.bukkit.boss.BarFlag
 import org.bukkit.boss.BarStyle
 import org.bukkit.boss.BossBar
 import org.bukkit.craftbukkit.CraftServer
@@ -364,8 +366,8 @@ class NMSHandler_v1_20_R4 : NMSHandler {
             val team = PlayerTeam(scoreboard, teamName)
             
             team.displayName = Component.literal(teamName)
-            team.playerPrefix = Component.literal(prefix)
-            team.playerSuffix = Component.literal(suffix)
+            team.playerPrefix = parseText(prefix)
+            team.playerSuffix = parseText(suffix)
             team.color = getChatFormatting(extractColorCode(prefix))
             team.nameTagVisibility = visibility
             team.collisionRule = Team.CollisionRule.NEVER
@@ -390,8 +392,14 @@ class NMSHandler_v1_20_R4 : NMSHandler {
         }
     }
     
+    /**
+     * Team color paints the **player name** (not the prefix text).
+     * Use the **last** real color in [text] so a trailing `&f` can force a white name
+     * while an earlier code still colors the rank prefix via [parseText].
+     */
     private fun extractColorCode(text: String): Char {
         val colorChars = "0123456789abcdefABCDEF"
+        var last = 'f'
         var i = 0
         while (i < text.length - 1) {
             val marker = text[i]
@@ -402,12 +410,12 @@ class NMSHandler_v1_20_R4 : NMSHandler {
                     continue
                 }
                 if (colorChars.contains(code)) {
-                    return code.lowercaseChar()
+                    last = code.lowercaseChar()
                 }
             }
             i++
         }
-        return 'f'
+        return last
     }
     
     private fun getChatFormatting(colorCode: Char): ChatFormatting {
@@ -558,11 +566,28 @@ class NMSHandler_v1_20_R4 : NMSHandler {
         bukkitBar.progress = bossBar.progress
         bukkitBar.color = toBukkitColor(bossBar.color)
         bukkitBar.style = toBukkitStyle(bossBar.style)
+        applyFlags(bukkitBar, bossBar)
     }
     
     private fun createBukkitBossBar(bossBar: UnifyBossBar): BossBar {
         return Bukkit.createBossBar(bossBar.title, toBukkitColor(bossBar.color), toBukkitStyle(bossBar.style)).apply {
             progress = bossBar.progress
+            applyFlags(this, bossBar)
+        }
+    }
+    
+    private fun applyFlags(bukkitBar: BossBar, bossBar: UnifyBossBar) {
+        for (flag in BossBarFlag.entries) {
+            val bukkitFlag = toBukkitFlag(flag)
+            if (bossBar.flags.contains(flag)) bukkitBar.addFlag(bukkitFlag) else bukkitBar.removeFlag(bukkitFlag)
+        }
+    }
+    
+    private fun toBukkitFlag(flag: BossBarFlag): BarFlag {
+        return when (flag) {
+            BossBarFlag.DARKEN_SKY -> BarFlag.DARKEN_SKY
+            BossBarFlag.PLAY_BOSS_MUSIC -> BarFlag.PLAY_BOSS_MUSIC
+            BossBarFlag.CREATE_FOG -> BarFlag.CREATE_FOG
         }
     }
     
@@ -689,6 +714,11 @@ class NMSHandler_v1_20_R4 : NMSHandler {
                         armorStand.customName = parseText(line.text)
                         armorStand.isCustomNameVisible = true
                         armorStand.isInvisible = true
+                        // Must match spawnHologram exactly: a flag missing here changes the
+                        // nameplate offset (small) or lets the client apply gravity, so the line
+                        // shifts and drifts on the first update.
+                        armorStand.isNoGravity = true
+                        armorStand.isSmall = true
                         armorStand.isMarker = true
                         
                         val dataValues = armorStand.entityData.packAll()

@@ -19,12 +19,17 @@ class GradientBuilder(
     fun build(): String {
         if (content.isEmpty()) return content
 
+        // Color codes (including §x hex) reset formatting, so bold/italic must be
+        // re-applied after every color — a single leading §l/§o is wiped immediately.
+        val formatting = buildString {
+            if (bold) append("§l")
+            if (italic) append("§o")
+        }
+
         val sb = StringBuilder()
-        if (bold) sb.append("§l")
-        if (italic) sb.append("§o")
 
         if (content.length == 1) {
-            sb.append(toSectionHex(from)).append(content).append("§r")
+            sb.append(toSectionHex(from)).append(formatting).append(content).append("§r")
             return sb.toString()
         }
 
@@ -37,6 +42,7 @@ class GradientBuilder(
                 interpolate(from.blue, to.blue, ratio)
             )
             sb.append(toSectionHex(color))
+            sb.append(formatting)
             sb.append(content[i])
         }
 

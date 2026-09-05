@@ -19,5 +19,13 @@ object UnifyConfig {
         val footer         = ConfigValue("tab.footer", emptyList<String>(), config)
     }
 
+    object BossBar {
+        val enabled        = ConfigValue("bossbar.enabled", true, config)
+        val updateInterval = ConfigValue("bossbar.update-interval-ticks", 20, config)
+        val tickInterval   = ConfigValue("bossbar.tick-interval-ticks", 4, config)
+        val indent         = ConfigValue("bossbar.indent", "  ", config)
+        val lines          = ConfigValue("bossbar.lines", emptyList<String>(), config)
+    }
+
     fun reload() = config.reload()
 }
