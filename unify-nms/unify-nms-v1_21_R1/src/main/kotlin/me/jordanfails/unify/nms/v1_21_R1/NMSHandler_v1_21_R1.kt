@@ -193,7 +193,7 @@ class NMSHandler_v1_21_R1 : NMSHandler {
         try {
             val top = player.openInventory.topInventory
             val contents = top.contents
-            val newInv = player.server.createInventory(null, top.size, title.take(32))
+            val newInv = player.server.createInventory(null, top.size, title)
             newInv.contents = contents
             player.openInventory(newInv)
         } catch (_: Throwable) { }
@@ -1064,8 +1064,8 @@ class NMSHandler_v1_21_R1 : NMSHandler {
     private val ITEM_LINE_SPACING = 0.5
 
     /** True for a text line, false for an item line — used to detect shape changes. */
-    private fun shapeOf(hologram: UnifyHologram): List<Boolean> =
-        hologram.lines.map { it is HologramLine.Text }
+    private fun shapeOf(player: Player, hologram: UnifyHologram): List<Boolean> =
+        hologram.getLines(player).map { it is HologramLine.Text }
 
     private fun viewOf(player: Player, hologram: UnifyHologram): HologramView? =
         playerHologramEntities[player.uniqueId]?.get(hologram.uuid)
@@ -1090,7 +1090,7 @@ class NMSHandler_v1_21_R1 : NMSHandler {
         // world does not: teleporting the existing entities lets the client interpolate towards
         // the new position instead of the hologram blinking out and reappearing.
         val sameWorld = view != null && view.anchorWorld == location.world?.uid
-        if (view != null && sameWorld && view.shape == shapeOf(hologram)) {
+        if (view != null && sameWorld && view.shape == shapeOf(player, hologram)) {
             val moved = view.anchorX != location.x ||
                 view.anchorY != location.y ||
                 view.anchorZ != location.z
@@ -1120,7 +1120,7 @@ class NMSHandler_v1_21_R1 : NMSHandler {
 
     private fun spawnHologram(player: Player, hologram: UnifyHologram) {
         try {
-            val lines = hologram.lines
+            val lines = hologram.getLines(player)
             val entityIds = mutableListOf<Int>()
             var currentY = hologram.location.y
 
@@ -1169,7 +1169,7 @@ class NMSHandler_v1_21_R1 : NMSHandler {
                 anchorX = hologram.location.x,
                 anchorY = hologram.location.y,
                 anchorZ = hologram.location.z,
-                shape = shapeOf(hologram),
+                shape = shapeOf(player, hologram),
             )
         } catch (e: Exception) {
             e.printStackTrace()
@@ -1201,7 +1201,7 @@ class NMSHandler_v1_21_R1 : NMSHandler {
      */
     private fun updateHologramLines(player: Player, hologram: UnifyHologram, view: HologramView, moved: Boolean) {
         try {
-            val lines = hologram.lines
+            val lines = hologram.getLines(player)
             var currentY = hologram.location.y
             val bukkitWorld = hologram.location.world ?: player.world
             val world = (bukkitWorld as CraftWorld).handle

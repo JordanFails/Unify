@@ -6,9 +6,8 @@ import org.bukkit.entity.Player
 /**
  * Supplies a player's boss-bar HUD each refresh.
  *
- * Providers are tried highest [weight] first; the first non-null [fetchBossBar] wins, exactly like
- * [me.jordanfails.unify.scoreboard.ScoreboardProvider]. Returning `null` means "no opinion" and
- * lets a lower-weight provider answer; returning [BossBarInfo.EMPTY] clears the HUD.
+ * Every provider's bars are stacked, highest [weight] on top. Returning `null` or
+ * [BossBarInfo.EMPTY] adds nothing.
  */
 abstract class BossBarProvider(val name: String, val weight: Int) {
 

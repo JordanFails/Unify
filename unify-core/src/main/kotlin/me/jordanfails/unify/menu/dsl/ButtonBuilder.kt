@@ -131,7 +131,7 @@ class ButtonBuilder {
             override fun isMoveable(): Boolean = self.moveable
             override fun isRemovable(): Boolean = self.removable
             override fun isAnimated(): Boolean = self.animated
-            override fun getAnimationInterval(): Long = self.animationInterval
+            override fun getAnimationInterval(): Long = (self.animationInterval / 50L).coerceAtLeast(1L)
         }
     }
 }

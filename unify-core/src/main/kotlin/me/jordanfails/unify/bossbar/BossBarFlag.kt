@@ -12,8 +12,7 @@ enum class BossBarFlag {
     companion object {
         @JvmStatic
         fun fromString(name: String): BossBarFlag? {
-            val key = name.trim().uppercase().replace('-', '_').replace(' ', '_')
-            return when (key) {
+            return when (val key = name.trim().uppercase().replace('-', '_').replace(' ', '_')) {
                 "DARKEN", "SKY" -> DARKEN_SKY
                 "MUSIC", "BOSS_MUSIC", "PLAY_MUSIC" -> PLAY_BOSS_MUSIC
                 "FOG", "CREATEFOG" -> CREATE_FOG

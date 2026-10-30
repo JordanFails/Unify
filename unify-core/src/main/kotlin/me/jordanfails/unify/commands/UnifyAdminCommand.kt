@@ -128,7 +128,11 @@ class UnifyAdminCommand : BaseCommand() {
         sender.sendMessage(CC.translate("&7Vanished: &f${if (vanished) "&aYes" else "&cNo"}"))
         sender.sendMessage(CC.translate("&7NMS Handler: &f${nms?.getServerVersion()?.versionString ?: "unavailable"}"))
         sender.sendMessage(CC.translate("&7Scoreboard: &f${if (ScoreboardHandler.isEnabled()) "enabled" else "disabled"} &7(${ScoreboardHandler.updateInterval}t, providers=${ScoreboardHandler.providerCount()})"))
-        sender.sendMessage(CC.translate("&7Tab: &f${if (TabHandler.isEnabled()) "enabled" else "disabled"} &7(${TabHandler.updateInterval}t, providers=${TabHandler.providerCount()})"))
+        sender.sendMessage(CC.translate("&7Tab: &f${if (TabHandler.isEnabled()) "enabled" else "disabled"} &7(${TabHandler.updateInterval}t, providers=${TabHandler.providerCount()}, sort=${TabHandler.sortProviderCount()})"))
+        if (TabHandler.sortProviderCount() > 0) {
+            val sortWeight = TabHandler.sortWeight(target)
+            sender.sendMessage(CC.translate("&7Tab Sort: &f$sortWeight &7(${TabHandler.sortProviders().joinToString { it.name }})"))
+        }
         sender.sendMessage(CC.translate("&7Nametags: &f${if (NametagHandler.isEnabled()) "enabled" else "disabled"} &7(${NametagHandler.updateInterval}t, providers=${NametagHandler.providerCount()})"))
         sender.sendMessage(CC.translate("&7Loaded NPCs: &f${NPCRegistry.getIds().size}"))
         sender.sendMessage(CC.translate("&7Loaded Holograms: &f${HologramManager.getIds().size}"))

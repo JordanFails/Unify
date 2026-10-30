@@ -196,7 +196,7 @@ class NMSHandler_v26_R1 : NMSHandler {
         try {
             val top = player.openInventory.topInventory
             val contents = top.contents
-            val newInv = player.server.createInventory(null, top.size, title.take(32))
+            val newInv = player.server.createInventory(null, top.size, title)
             newInv.contents = contents
             player.openInventory(newInv)
         } catch (_: Throwable) { }
@@ -1029,7 +1029,7 @@ class NMSHandler_v26_R1 : NMSHandler {
     
     override fun updateHologram(player: Player, hologram: UnifyHologram) {
         val currentIds = playerHologramEntities[player.uniqueId]?.get(hologram.uuid)
-        if (currentIds != null && currentIds.size == hologram.lines.size) {
+        if (currentIds != null && currentIds.size == hologram.getLines(player).size) {
             updateHologramLines(player, hologram, currentIds)
         } else {
             hideHologram(player, hologram)
@@ -1039,7 +1039,7 @@ class NMSHandler_v26_R1 : NMSHandler {
     
     private fun spawnHologram(player: Player, hologram: UnifyHologram) {
         try {
-            val lines = hologram.lines
+            val lines = hologram.getLines(player)
             val entityIds = mutableListOf<Int>()
             var currentY = hologram.location.y
             
@@ -1127,7 +1127,7 @@ class NMSHandler_v26_R1 : NMSHandler {
      */
     private fun updateHologramLines(player: Player, hologram: UnifyHologram, entityIds: List<Int>) {
         try {
-            val lines = hologram.lines
+            val lines = hologram.getLines(player)
             var currentY = hologram.location.y
             val world = (player.world as CraftWorld).handle
             val connection = (player as CraftPlayer).handle.connection

@@ -138,8 +138,7 @@ class NMSHandler_v1_9_R2 : NMSHandler {
         container.windowId = windowId
         handle.activeContainer = container
 
-        // Titles longer than 32 chars crash old clients
-        val safeTitle = ChatComponentText(title.take(32))
+        val safeTitle = ChatComponentText(title)
         val packet = PacketPlayOutOpenWindow(windowId, "minecraft:container", safeTitle, inventory.size)
         handle.playerConnection.sendPacket(packet)
         handle.updateInventory(container)
@@ -149,7 +148,7 @@ class NMSHandler_v1_9_R2 : NMSHandler {
         val craft = player as CraftPlayer
         val handle = craft.handle
         val container = handle.activeContainer
-        val safeTitle = ChatComponentText(title.take(32))
+        val safeTitle = ChatComponentText(title)
         val packet = PacketPlayOutOpenWindow(
             container.windowId,
             "minecraft:container",
@@ -595,7 +594,7 @@ class NMSHandler_v1_9_R2 : NMSHandler {
     
     override fun updateHologram(player: Player, hologram: UnifyHologram) {
         val currentIds = playerHologramEntities[player.uniqueId]?.get(hologram.uuid)
-        if (currentIds != null && currentIds.size == hologram.lines.size) {
+        if (currentIds != null && currentIds.size == hologram.getLines(player).size) {
             updateHologramLines(player, hologram, currentIds)
         } else {
             hideHologram(player, hologram)
@@ -605,7 +604,7 @@ class NMSHandler_v1_9_R2 : NMSHandler {
     
     private fun spawnHologram(player: Player, hologram: UnifyHologram) {
         try {
-            val lines = hologram.lines
+            val lines = hologram.getLines(player)
             val entityIds = mutableListOf<Int>()
             val animated = mutableListOf<AnimatedArmorStand>()
             var currentY = hologram.location.y
@@ -687,7 +686,7 @@ class NMSHandler_v1_9_R2 : NMSHandler {
     
     private fun updateHologramLines(player: Player, hologram: UnifyHologram, entityIds: List<Int>) {
         try {
-            val lines = hologram.lines
+            val lines = hologram.getLines(player)
             val animated = mutableListOf<AnimatedArmorStand>()
             var currentY = hologram.location.y
             val world = (player.world as CraftWorld).handle

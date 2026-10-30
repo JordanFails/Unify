@@ -94,6 +94,7 @@ abstract class InteractiveMenu : Menu {
      * to output slots (ghost results the player can take).
      */
     var autoRefreshResults: Boolean = true
+    var refreshButtonsOnContentsChange: Boolean = true
 
     constructor() : super()
     constructor(title: String) : super(title)
@@ -447,9 +448,7 @@ abstract class InteractiveMenu : Menu {
 
         // Output-only: only take, never place
         if (behavior == SlotBehavior.OUTPUT_ONLY) {
-            return if (current != null) {
-                takeFromSlot(player, slot, current.amount) ?: cursor
-            } else cursor
+            return cursor
         }
 
         // Input-only: can place, and can only "swap" if empty or similar stack merge
@@ -469,6 +468,7 @@ abstract class InteractiveMenu : Menu {
         // Fully interactive: true swap
         if (behavior != SlotBehavior.INTERACTIVE) return cursor
         if (!isItemAllowedInSlot(slot, cursor)) return cursor
+        if (cursor.amount > minOf(getMaxAmount(slot), cursor.maxStackSize)) return cursor
 
         val old = current
         setSlotItem(slot, cursor)
@@ -481,7 +481,6 @@ abstract class InteractiveMenu : Menu {
 
     override fun onOpen(player: Player) {
         super.onOpen(player)
-        computeSlotBehaviors()
         if (autoRefreshResults) {
             refreshResults(player)
         }
@@ -504,6 +503,7 @@ abstract class InteractiveMenu : Menu {
     }
 
     private fun computeSlotBehaviors() {
+        require(getAllItemSlots().all { it in 0..53 }) { "Interactive slots must be between 0 and 53" }
         slotBehaviors.clear()
         getInteractiveSlots().forEach { slotBehaviors[it] = SlotBehavior.INTERACTIVE }
         getInputOnlySlots().forEach { slotBehaviors[it] = SlotBehavior.INPUT_ONLY }
@@ -513,6 +513,8 @@ abstract class InteractiveMenu : Menu {
     final override fun getButtons(player: Player): Map<Int, Button> {
         prepareMenu(player)
         computeSlotBehaviors()
+        val fixedButtons = getFixedButtons(player)
+        fixedButtons.keys.forEach(slotBehaviors::remove)
 
         val buttons = linkedMapOf<Int, Button>()
         val size = resolveSize(player)
@@ -538,7 +540,7 @@ abstract class InteractiveMenu : Menu {
         }
 
         // Fixed chrome wins on conflicts
-        buttons.putAll(getFixedButtons(player))
+        buttons.putAll(fixedButtons)
 
         return buttons
     }
@@ -557,9 +559,11 @@ abstract class InteractiveMenu : Menu {
     override fun acceptsInsertedItem(player: Player, itemStack: ItemStack, slot: Int): Boolean {
         // Prefer the richer placeIntoSlot path. Returns true only if something was placed.
         if (!canPlaceIn(slot)) return false
-        val before = itemStack.amount
-        val leftover = placeIntoSlot(player, slot, itemStack)
-        return leftover == null || leftover.amount < before
+        val current = getSlotItem(slot)
+        if (current != null && !current.isSimilar(itemStack)) return false
+        val room = minOf(getMaxAmount(slot), itemStack.maxStackSize) - (current?.amount ?: 0)
+        if (room < itemStack.amount) return false
+        return placeIntoSlot(player, slot, itemStack) == null
     }
 
     /**
@@ -569,8 +573,13 @@ abstract class InteractiveMenu : Menu {
      * when partial stacks must leave a leftover on the player slot.
      */
     override fun acceptsShiftClickedItem(player: Player, itemStack: ItemStack): Boolean {
-        val leftover = shiftClickInto(player, itemStack)
-        return leftover == null
+        val capacity = (getInteractiveSlots() + getInputOnlySlots()).sumOf { slot ->
+            val current = getSlotItem(slot)
+            if (!isItemAllowedInSlot(slot, itemStack) || (current != null && !current.isSimilar(itemStack))) 0
+            else (minOf(getMaxAmount(slot), itemStack.maxStackSize) - (current?.amount ?: 0)).coerceAtLeast(0)
+        }
+        if (capacity < itemStack.amount) return false
+        return shiftClickInto(player, itemStack) == null
     }
 
     /**
@@ -594,18 +603,18 @@ abstract class InteractiveMenu : Menu {
     }
 
     override fun acceptsDraggedItems(player: Player, items: Map<Int, ItemStack>): Boolean {
-        // Validate all first
+        // Bukkit supplies final totals, rather than the amounts added to each stack.
         for ((slot, item) in items) {
-            if (!canPlaceIn(slot)) return false
-            if (!isItemAllowedInSlot(slot, item)) return false
-            val current = slotContents[slot]
-            if (current != null && current.type != Material.AIR && !current.isSimilar(item)) {
-                return false
-            }
+            if (!canPlaceIn(slot) || !isItemAllowedInSlot(slot, item)) return false
+            if (item.amount !in 1..minOf(getMaxAmount(slot), item.maxStackSize)) return false
+            val current = getSlotItem(slot)
+            if (current != null && (!current.isSimilar(item) || item.amount < current.amount)) return false
         }
-        for ((slot, item) in items) {
-            placeIntoSlot(player, slot, item)
-        }
+        val previous = items.mapValues { getSlotItem(it.key) }
+        items.forEach { (slot, item) -> setSlotItem(player, slot, item, notify = false) }
+        items.forEach { (slot, item) -> onSlotChange(player, slot, previous[slot], item.clone()) }
+        onContentsChanged(player)
+        if (refreshButtonsOnContentsChange) refreshButtons(player)
         return true
     }
 
@@ -633,8 +642,7 @@ abstract class InteractiveMenu : Menu {
         // Skip onContentsChanged for pure result-slot rewrites from refreshResults
         // (refreshResults doesn't call notifyChanged).
         onContentsChanged(player)
-        // Rebuild fixed chrome (previews / confirm / result) without reopening.
-        refreshButtons(player)
+        if (refreshButtonsOnContentsChange) refreshButtons(player)
     }
 
     companion object {

@@ -18,8 +18,7 @@ enum class BossBarColor {
     companion object {
         @JvmStatic
         fun fromString(name: String): BossBarColor? {
-            val key = name.trim().uppercase().replace('-', '_').replace(' ', '_')
-            return when (key) {
+            return when (val key = name.trim().uppercase().replace('-', '_').replace(' ', '_')) {
                 "AQUA", "CYAN", "LIGHT_BLUE" -> BLUE
                 "GOLD" -> YELLOW
                 "MAGENTA" -> PINK

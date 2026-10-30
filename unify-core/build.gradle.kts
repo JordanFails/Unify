@@ -46,7 +46,7 @@ dependencies {
     compileOnly(kotlin("reflect"))
     implementation("com.github.cryptomorin:XSeries:13.7.1")
     implementation("co.aikar:acf-paper:0.5.1-SNAPSHOT")
-    implementation("io.github.jordanfails:honey:1.1.3")
+    implementation("io.github.jordanfails:honey:1.1.4-SNAPSHOT")
     // Unify exposes the official NBT-API types directly for entity, tile-entity,
     // and item NBT. The NBTAPI plugin supplies this dependency at runtime.
     compileOnly("de.tr7zw:item-nbt-api-plugin:2.15.5")

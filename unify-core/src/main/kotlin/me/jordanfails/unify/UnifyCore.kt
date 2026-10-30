@@ -1,5 +1,9 @@
 package me.jordanfails.unify
 
+import me.jordanfails.unify.request.PlayerRequests
+import me.jordanfails.unify.request.RequestCommand
+import me.jordanfails.unify.preview.WorldPreviews
+import me.jordanfails.unify.hologram.HologramViews
 import me.jordanfails.unify.utils.Tasks
 import me.jordanfails.unify.menu.anvil.AnvilListener
 import me.jordanfails.unify.menu.listener.ButtonListeners
@@ -56,10 +60,24 @@ class UnifyCore : JavaPlugin() {
         setupMenu()
         setupHolograms()
         setupNPCs()
+        PlayerRequests.enable(this)
+        WorldPreviews.enable(this)
+        HologramViews.enable(this)
         setupCommands()
     }
 
     override fun onDisable() {
+        PlayerRequests.disable()
+        WorldPreviews.disable()
+        HologramViews.disable()
+        me.jordanfails.unify.menu.Menu.currentlyOpenedMenus.keys.toList().forEach { uuid ->
+            try {
+                server.getPlayer(uuid)?.closeInventory()
+            } catch (error: Exception) {
+                logger.log(java.util.logging.Level.SEVERE, "Could not close menu for $uuid during shutdown", error)
+            }
+        }
+        me.jordanfails.unify.menu.history.MenuHistory.clearAll()
         BossBarHandler.clearAll()
         BossBarManager.disable()
         NPCRegistry.disable()
@@ -79,7 +97,7 @@ class UnifyCore : JavaPlugin() {
     }
 
     fun setupMenu() {
-        Tasks.runTimerAsync(this, 2L) {
+        Tasks.runTimer(this, 2L) {
             MenuAutoUpdater.run()
         }
         listOf(
@@ -95,6 +113,7 @@ class UnifyCore : JavaPlugin() {
             HologramCommand(),
             NPCCommand(),
             PingCommand(),
+            RequestCommand(),
             LoreCommand(),
             UnifyAdminCommand(),
         ).forEach { commandManager.registerCommand(it) }

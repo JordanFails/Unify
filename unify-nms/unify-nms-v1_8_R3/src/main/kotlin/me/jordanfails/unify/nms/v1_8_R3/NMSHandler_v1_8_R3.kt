@@ -566,7 +566,7 @@ class NMSHandler_v1_8_R3 : NMSHandler {
     override fun updateHologram(player: Player, hologram: UnifyHologram) {
         val currentIds = playerHologramEntities[player.uniqueId]?.get(hologram.uuid)
         
-        if (currentIds != null && currentIds.size == hologram.lines.size) {
+        if (currentIds != null && currentIds.size == hologram.getLines(player).size) {
             updateHologramLines(player, hologram, currentIds)
         } else {
             hideHologram(player, hologram)
@@ -576,7 +576,7 @@ class NMSHandler_v1_8_R3 : NMSHandler {
     
     private fun spawnHologram(player: Player, hologram: UnifyHologram) {
         try {
-            val lines = hologram.lines
+            val lines = hologram.getLines(player)
             val entityIds = mutableListOf<Int>()
             val animated = mutableListOf<AnimatedArmorStand>()
             var currentY = hologram.location.y
@@ -651,7 +651,7 @@ class NMSHandler_v1_8_R3 : NMSHandler {
     
     private fun updateHologramLines(player: Player, hologram: UnifyHologram, entityIds: List<Int>) {
         try {
-            val lines = hologram.lines
+            val lines = hologram.getLines(player)
             val animated = mutableListOf<AnimatedArmorStand>()
             var currentY = hologram.location.y
             val connection = (player as CraftPlayer).handle.playerConnection

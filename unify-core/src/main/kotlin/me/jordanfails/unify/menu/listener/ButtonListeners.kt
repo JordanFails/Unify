@@ -23,63 +23,42 @@ import org.bukkit.inventory.ItemStack
 
 object ButtonListeners : Listener {
 
-    @EventHandler(priority = EventPriority.MONITOR)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     fun onInventoryDragEvent(event: InventoryDragEvent) {
-        val openMenu = Menu.currentlyOpenedMenus[event.whoClicked.uniqueId] ?: return
-        val player = event.whoClicked as Player
-
-        if (event.inventory != event.view.topInventory) {
-            event.isCancelled = true
+        val player = event.whoClicked as? Player ?: return
+        val menu = Menu.currentlyOpenedMenus[player.uniqueId] ?: return
+        if (!menu.ownsInventory(event.view.topInventory)) return
+        val topSize = event.view.topInventory.size
+        val topItems = event.newItems.filterKeys { it in 0 until topSize }
+        if (topItems.isEmpty()) {
+            if (!menu.keepBottomMechanics) event.isCancelled = true
             return
         }
-
-        if (event.newItems.maxByOrNull { it.key }!!.key >= event.view.topInventory.size) {
-            event.isCancelled = true
+        event.isCancelled = true
+        if (menu is InteractiveMenu) {
+            if (!topItems.keys.all(menu::canPlaceIn)) return
+        } else if (topItems.keys.any { menu.buttons[it]?.isMoveable() == false }) {
             return
         }
-
-        val draggedSlots = event.rawSlots.filter { it < event.view.topInventory.size }
-
-        if (openMenu is InteractiveMenu) {
-            // Only allow drag into placeable item slots
-            val allowed = draggedSlots.all { openMenu.canPlaceIn(it) }
-            if (!allowed) {
-                event.isCancelled = true
-                return
-            }
-            if (openMenu.acceptsDraggedItems(player, event.newItems)) {
-                // Cursor/slots already updated by Bukkit; sync our state from newItems
-                // acceptsDraggedItems already wrote via placeIntoSlot
-                delayedUpdate(player)
-            } else {
-                event.isCancelled = true
-            }
-            return
+        val accepted = if (menu.nonCancelling && menu !is InteractiveMenu) true
+            else menu.acceptsDraggedItems(player, topItems)
+        if (!accepted || Menu.currentlyOpenedMenus[player.uniqueId] !== menu) return
+        event.newItems.forEach { (slot, item) ->
+            val placed = if (slot < topSize && menu is InteractiveMenu) menu.getSlotItem(slot) else item.clone()
+            event.view.setItem(slot, placed)
         }
-
-        val hasNonMoveableButton = draggedSlots.any { slot ->
-            val button = openMenu.buttons[slot]
-            button != null && !button.isMoveable()
-        }
-
-        if (hasNonMoveableButton) {
-            event.isCancelled = true
-            return
-        }
-
-        if (openMenu.acceptsDraggedItems(player, event.newItems)) {
-            if (openMenu.updateAfterClick) {
-                openMenu.openMenu(player)
-            }
-        } else {
-            event.isCancelled = true
-        }
+        event.view.setCursor(event.cursor)
     }
 
-    @EventHandler(priority = EventPriority.MONITOR)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     fun onButtonPress(event: InventoryClickEvent) {
+        handleButtonPress(event)
+    }
+
+    private fun handleButtonPress(event: InventoryClickEvent) {
         val player = event.whoClicked as Player
         val openMenu = Menu.currentlyOpenedMenus[player.uniqueId] ?: return
+        if (!openMenu.ownsInventory(event.view.topInventory)) return
 
         if (event.click == ClickType.DOUBLE_CLICK) {
             event.isCancelled = true
@@ -109,18 +88,15 @@ object ButtonListeners : Listener {
 
         // ── Generic: insert via cursor onto a top slot ───────────────────────
         if (event.cursor != null && event.cursor!!.type != Material.AIR &&
-            (event.click == ClickType.LEFT || event.click == ClickType.RIGHT || event.click == ClickType.MIDDLE)
+            (event.click == ClickType.LEFT || event.click == ClickType.RIGHT)
         ) {
             if (event.clickedInventory == event.view.topInventory) {
+                if (openMenu.nonCancelling && (openMenu.buttons[event.slot]?.isMoveable() != false)) return
                 event.isCancelled = true
 
                 val itemInserted = when (event.click) {
                     ClickType.LEFT -> event.cursor
                     ClickType.RIGHT -> ItemBuilder(event.cursor!!.clone()).amount(1).build()
-                    ClickType.MIDDLE -> {
-                        val half = (event.cursor!!.amount / 2).coerceAtLeast(1)
-                        ItemBuilder(event.cursor!!.clone()).amount(half).build()
-                    }
                     else -> event.cursor
                 }
 
@@ -135,11 +111,6 @@ object ButtonListeners : Listener {
                                     .amount(event.cursor!!.amount - 1).build()
                             }
                         }
-                        ClickType.MIDDLE -> {
-                            val half = (event.cursor!!.amount - (event.cursor!!.amount / 2).coerceAtLeast(1))
-                                .coerceAtLeast(1)
-                            event.cursor = ItemBuilder(event.cursor!!.clone()).amount(half).build()
-                        }
                         else -> event.cursor = null
                     }
                     refreshOpenMenuIfSame(player, openMenu)
@@ -153,7 +124,9 @@ object ButtonListeners : Listener {
             if (event.click == ClickType.SHIFT_LEFT || event.click == ClickType.SHIFT_RIGHT) {
                 event.isCancelled = true
                 if (event.currentItem != null) {
-                    if (openMenu.acceptsShiftClickedItem(player, event.currentItem!!)) {
+                    if (openMenu.nonCancelling) {
+                        event.currentItem = moveIntoMenu(event.view.topInventory, openMenu, event.currentItem!!)
+                    } else if (openMenu.acceptsShiftClickedItem(player, event.currentItem!!.clone())) {
                         event.currentItem = null
                         refreshOpenMenuIfSame(player, openMenu)
                     }
@@ -175,10 +148,15 @@ object ButtonListeners : Listener {
                     InventoryAction.PICKUP_SOME,
                     InventoryAction.COLLECT_TO_CURSOR -> !button.isRemovable()
 
-                    InventoryAction.MOVE_TO_OTHER_INVENTORY -> !button.isRemovable()
+                    InventoryAction.MOVE_TO_OTHER_INVENTORY,
+                    InventoryAction.DROP_ALL_SLOT,
+                    InventoryAction.DROP_ONE_SLOT -> !button.isRemovable()
+
+                    InventoryAction.CLONE_STACK -> !openMenu.nonCancelling
 
                     InventoryAction.SWAP_WITH_CURSOR,
-                    InventoryAction.HOTBAR_SWAP -> !button.isMoveable()
+                    InventoryAction.HOTBAR_SWAP,
+                    InventoryAction.HOTBAR_MOVE_AND_READD -> !button.isMoveable()
 
                     InventoryAction.PLACE_ALL,
                     InventoryAction.PLACE_ONE,
@@ -194,11 +172,10 @@ object ButtonListeners : Listener {
                     if (Menu.currentlyOpenedMenus.containsKey(player.uniqueId)) {
                         val newMenu = Menu.currentlyOpenedMenus[player.uniqueId]
                         if (newMenu === openMenu && newMenu.updateAfterClick) {
-                            newMenu.openMenu(player)
+                            refreshOpenMenuIfSame(player, newMenu)
                         }
                     }
 
-                    delayedUpdate(player)
                     return
                 }
             }
@@ -210,14 +187,14 @@ object ButtonListeners : Listener {
                     event.isCancelled = true
                     if (event.currentItem != null && event.currentItem!!.type != Material.AIR) {
                         val removedItem = event.currentItem!!.clone()
-                        player.inventory.addItem(removedItem)
-                        event.view.topInventory.setItem(event.slot, null)
+                        val leftover = player.inventory.addItem(removedItem)
+                        event.currentItem = leftover.values.firstOrNull()
                     }
                 } else {
                     event.isCancelled = true
                 }
             } else {
-                event.isCancelled = cancel
+                if (cancel) event.isCancelled = true
             }
 
             button.clicked(player, event.slot, event.click, event.view)
@@ -225,30 +202,39 @@ object ButtonListeners : Listener {
             if (Menu.currentlyOpenedMenus.containsKey(player.uniqueId)) {
                 val newMenu = Menu.currentlyOpenedMenus[player.uniqueId]
                 if (newMenu === openMenu && newMenu.updateAfterClick) {
-                    newMenu.openMenu(player)
+                    if (event.isCancelled) refreshOpenMenuIfSame(player, newMenu)
+                    else Bukkit.getScheduler().runTask(UnifyCore.instance, Runnable {
+                        refreshOpenMenuIfSame(player, newMenu)
+                    })
                 }
             }
 
-            if (event.isCancelled) {
-                delayedUpdate(player)
-            }
             return
         } else {
             if (event.clickedInventory == event.view.topInventory) {
-                event.isCancelled = true
+                if (!openMenu.nonCancelling) event.isCancelled = true
                 openMenu.onBackgroundClick(player, event.slot, event.click)
             }
         }
 
-        if (event.click == ClickType.SHIFT_LEFT || event.click == ClickType.SHIFT_RIGHT) {
-            event.isCancelled = true
-            if (openMenu.nonCancelling && event.currentItem != null) {
-                if (event.slot == event.rawSlot && event.clickedInventory == event.view.topInventory) {
-                    player.openInventory.topInventory.addItem(event.currentItem!!)
-                    event.currentItem = null
-                }
+    }
+
+    private fun moveIntoMenu(inventory: org.bukkit.inventory.Inventory, menu: Menu, source: ItemStack): ItemStack? {
+        val remaining = source.clone()
+        for (empty in listOf(false, true)) {
+            for (slot in 0 until inventory.size) {
+                if (menu.buttons[slot]?.isMoveable() == false) continue
+                val current = inventory.getItem(slot)?.takeUnless { it.type == Material.AIR }
+                if ((current == null) != empty || (current != null && !current.isSimilar(remaining))) continue
+                val room = minOf(inventory.maxStackSize, remaining.maxStackSize) - (current?.amount ?: 0)
+                val amount = minOf(remaining.amount, room.coerceAtLeast(0))
+                if (amount == 0) continue
+                inventory.setItem(slot, remaining.clone().apply { this.amount = (current?.amount ?: 0) + amount })
+                remaining.amount -= amount
+                if (remaining.amount == 0) return null
             }
         }
+        return remaining
     }
 
     /**
@@ -268,7 +254,6 @@ object ButtonListeners : Listener {
             if (item != null && item.type != Material.AIR) {
                 val leftover = menu.shiftClickInto(player, item, notifyReject = true)
                 event.currentItem = leftover
-                delayedUpdate(player)
             }
             return true
         }
@@ -276,7 +261,6 @@ object ButtonListeners : Listener {
         // Clicks on top inventory item slots
         if (event.clickedInventory == event.view.topInventory && menu.isItemSlot(event.slot)) {
             handleInteractiveSlotClick(event, player, menu, menu.getSlotBehavior(event.slot))
-            delayedUpdate(player)
             return true
         }
 
@@ -383,19 +367,26 @@ object ButtonListeners : Listener {
             InventoryAction.MOVE_TO_OTHER_INVENTORY -> {
                 // Shift-click item out of menu → player inventory
                 if (!canTake || current == null) return
-                val taken = menu.takeFromSlot(player, slot, current.amount) ?: return
-                val leftover = player.inventory.addItem(taken)
-                if (leftover.isNotEmpty()) {
-                    // Put back what didn't fit
-                    leftover.values.forEach { stack ->
-                        menu.placeIntoSlot(player, slot, stack)
+                var capacity = 0
+                for (inventorySlot in 0..35) {
+                    val item = player.inventory.getItem(inventorySlot)?.takeUnless { it.type == Material.AIR }
+                    val maximum = minOf(current.maxStackSize, player.inventory.maxStackSize)
+                    capacity += when {
+                        item == null -> maximum
+                        item.isSimilar(current) -> (maximum - item.amount).coerceAtLeast(0)
+                        else -> 0
                     }
+                }
+                if (capacity == 0) return
+                val taken = menu.takeFromSlot(player, slot, minOf(current.amount, capacity)) ?: return
+                player.inventory.addItem(taken).values.forEach { leftover ->
+                    player.world.dropItemNaturally(player.location, leftover)
                 }
             }
 
             InventoryAction.HOTBAR_SWAP -> {
-                val hotbarSlot = event.hotbarButton
-                if (hotbarSlot < 0) return
+                val hotbarSlot = if (event.click == ClickType.SWAP_OFFHAND) 40 else event.hotbarButton
+                if (hotbarSlot !in 0..8 && hotbarSlot != 40) return
                 val hotbarItem = player.inventory.getItem(hotbarSlot)
 
                 if (hotbarItem == null || hotbarItem.type == Material.AIR) {
@@ -425,8 +416,8 @@ object ButtonListeners : Listener {
                         return
                     }
                     // Full swap for interactive
-                    val old = current?.clone()
-                    menu.setSlotItem(player, slot, hotbarItem.clone(), notify = true)
+                    if (hotbarItem.amount > minOf(menu.getMaxAmount(slot), hotbarItem.maxStackSize)) return
+                    val old = menu.swapWithSlot(player, slot, hotbarItem.clone())
                     player.inventory.setItem(hotbarSlot, old)
                 }
             }
@@ -472,20 +463,26 @@ object ButtonListeners : Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     fun onInventoryClose(event: InventoryCloseEvent) {
-        val player = event.player as Player
-        val openMenu = Menu.currentlyOpenedMenus[player.uniqueId] ?: return
+        val player = event.player as? Player ?: return
+        val menu = Menu.currentlyOpenedMenus[player.uniqueId] ?: return
+        if (!menu.ownsInventory(event.view.topInventory)) return
+        closeMenu(player, menu, event.view)
+    }
 
-        openMenu.closed = true
-
-        if (event.view.cursor != null && event.view.cursor!!.type != Material.AIR) {
-            event.player.inventory.addItem(event.view.cursor)
-            event.view.cursor = null
+    private fun closeMenu(player: Player, menu: Menu, view: org.bukkit.inventory.InventoryView) {
+        if (!menu.beginClose(player)) return
+        menu.closed = true
+        try {
+            val cursor = view.cursor?.takeUnless { it.type == Material.AIR }?.clone()
+            view.setCursor(null)
+            if (cursor != null) player.inventory.addItem(cursor).values.forEach {
+                player.world.dropItemNaturally(player.location, it)
+            }
+            menu.onClose(player, menu.manualClose)
+        } finally {
+            Menu.currentlyOpenedMenus.remove(player.uniqueId, menu)
+            menu.finishClose(player)
         }
-
-        openMenu.onClose(player, openMenu.manualClose)
-        openMenu.manualClose = false
-
-        Menu.currentlyOpenedMenus.remove(player.uniqueId)
     }
 
     private fun refreshOpenMenuIfSame(player: Player, menu: Menu) {
@@ -497,16 +494,12 @@ object ButtonListeners : Listener {
         }
     }
 
-    private fun delayedUpdate(player: Player) {
-        Bukkit.getScheduler().scheduleSyncDelayedTask(UnifyCore.instance, {
-            player.updateInventory()
-        }, 1L)
-    }
-
     @EventHandler
     fun onPlayerQuitEvent(event: PlayerQuitEvent) {
         Button.clickCooldown.remove(event.player.uniqueId)
         MenuHistory.clear(event.player)
-        Menu.currentlyOpenedMenus.remove(event.player.uniqueId)
+        val menu = Menu.currentlyOpenedMenus[event.player.uniqueId]
+        if (menu != null) closeMenu(event.player, menu, event.player.openInventory)
+        Menu.cancelPendingOpen(event.player.uniqueId)
     }
 }

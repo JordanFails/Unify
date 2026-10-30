@@ -5,11 +5,14 @@ import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.nametag.provider.OpNametagProvider
 import me.jordanfails.unify.nametag.thread.NametagThread
 import me.jordanfails.unify.nametag.update.NametagUpdate
+import me.jordanfails.unify.tab.TabHandler
+import me.jordanfails.unify.tab.TabSortProvider
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
 import org.bukkit.scheduler.BukkitTask
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 
 object NametagHandler {
 
@@ -18,6 +21,9 @@ object NametagHandler {
     private val registeredTeams = Collections.synchronizedList(ArrayList<NametagInfo>())
     private var teamCreateIndex = 1
     private var providers = ArrayList<NametagProvider>()
+
+    /** Plugins that want a player's plate gone entirely; see [hideNametagsWhen]. */
+    private val hideRules = CopyOnWriteArrayList<(Player) -> Boolean>()
 
     private var isNametagRestrictionEnabled: Boolean = false
     private var nametagRestrictBypass: String = ""
@@ -79,6 +85,20 @@ object NametagHandler {
         providers.sortWith { a, b -> Ints.compare(b.weight, a.weight) }
     }
 
+    /**
+     * Hides the plate of any player [rule] matches, for everyone. A provider cannot do this: it only
+     * picks a prefix, and the team it lands on is sent with `ALWAYS` on every refresh — so a plugin
+     * that wants a name gone has to be asked here, before the team goes out.
+     *
+     * Rules survive [reloadAll]: they are wiring, not config.
+     */
+    fun hideNametagsWhen(rule: (Player) -> Boolean) {
+        hideRules += rule
+    }
+
+    private fun isHidden(player: Player): Boolean =
+        hideRules.any { runCatching { it(player) }.getOrDefault(false) }
+
     fun reloadPlayer(toRefresh: Player) {
         val update = NametagUpdate(toRefresh)
 
@@ -128,10 +148,15 @@ object NametagHandler {
             return
         }
 
+        if (isHidden(toRefresh)) {
+            UnifyCore.instance.nms?.sendHideNametagPacket(refreshFor, toRefresh)
+            return
+        }
+
         var provided: NametagInfo? = null
         var providerIndex = 0
 
-        while (provided == null && providerIndex < providers.size) {
+        while (provided == null && providers.isNotEmpty()) {
             provided = providers[providerIndex++].fetchNametag(toRefresh, refreshFor)
         }
 
@@ -154,22 +179,20 @@ object NametagHandler {
         // Get dynamic limits from NMS handler
         val nms = UnifyCore.instance.nms
         val prefixLimit = nms?.getTeamPrefixLimit() ?: 16
-        val nameLimit = 16 // Team names always have 16 char limit
-        
+
         if (provided.prefix.length > prefixLimit) {
             provided.prefix = provided.prefix.substring(0, prefixLimit)
-        }
-
-        if (provided.name.length > nameLimit) {
-            provided.name = provided.name.substring(0, nameLimit)
         }
 
         if (provided.suffix.length > prefixLimit) {
             provided.suffix = provided.suffix.substring(0, prefixLimit)
         }
 
-        ScoreboardTeamPacketMod(provided.name, provided.prefix, provided.suffix, arrayListOf(toRefresh.name), 0).send(refreshFor)
-        teamInfoMap[toRefresh.uniqueId] = provided
+        val sortWeight = TabHandler.sortWeight(toRefresh)
+        val team = getOrCreate(provided.prefix, provided.suffix, sortWeight)
+
+        ScoreboardTeamPacketMod(team.name, team.prefix, team.suffix, arrayListOf(toRefresh.name), 0).send(refreshFor)
+        teamInfoMap[toRefresh.uniqueId] = team
         teamMap[refreshFor.uniqueId] = teamInfoMap
     }
 
@@ -179,14 +202,15 @@ object NametagHandler {
         }
     }
 
-    internal fun getOrCreate(prefix: String, suffix: String): NametagInfo {
+    internal fun getOrCreate(prefix: String, suffix: String, sortWeight: Int = 0): NametagInfo {
+        val clampedWeight = sortWeight.coerceIn(0, TabSortProvider.MAX_WEIGHT)
         for (teamInfo in registeredTeams) {
-            if (teamInfo.prefix == prefix && teamInfo.suffix == suffix) {
+            if (teamInfo.prefix == prefix && teamInfo.suffix == suffix && teamInfo.sortWeight == clampedWeight) {
                 return teamInfo
             }
         }
 
-        val newTeam = NametagInfo(teamCreateIndex++.toString(), prefix, suffix)
+        val newTeam = NametagInfo(nextTeamName(clampedWeight), prefix, suffix, clampedWeight)
         registeredTeams.add(newTeam)
 
         val addPacket = newTeam.teamAddPacket
@@ -195,6 +219,15 @@ object NametagHandler {
         }
 
         return newTeam
+    }
+
+    /**
+     * Minecraft sorts the tab list lexicographically by team name, then by player name.
+     * Invert the sort weight so a higher rank (larger weight) becomes an earlier team name.
+     */
+    private fun nextTeamName(sortWeight: Int): String {
+        val inverted = (TabSortProvider.MAX_WEIGHT - sortWeight).toString().padStart(4, '0')
+        return (inverted + teamCreateIndex++).take(16)
     }
 
     fun isEnabled(): Boolean {

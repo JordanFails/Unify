@@ -6,6 +6,7 @@ import me.jordanfails.unify.menu.anvil.AnvilSession
 import me.jordanfails.unify.nms.LegacyColorDataType
 import me.jordanfails.unify.nms.LegacyItemColor
 import me.jordanfails.unify.nms.NMSHandlerFactory
+import me.jordanfails.unify.nms.ServerVersion
 import me.jordanfails.unify.utils.XSupport
 import org.bukkit.Bukkit
 import org.bukkit.ChatColor
@@ -13,17 +14,19 @@ import org.bukkit.Material
 import org.bukkit.entity.Player
 import org.bukkit.event.inventory.ClickType
 import org.bukkit.inventory.Inventory
+import org.bukkit.inventory.InventoryView
 import org.bukkit.inventory.ItemStack
 import org.bukkit.scheduler.BukkitTask
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.ceil
 
 abstract class Menu {
 
     var buttons: ConcurrentHashMap<Int, Button> = ConcurrentHashMap()
     var autoUpdate: Boolean = false
-    var autoUpdateInterval: Long = 500L
+    var autoUpdateInterval: Long = 10L
     var updateAllButtons: Boolean = false  // When true, auto-update refreshes ALL buttons, not just animated ones
     var animated: Boolean = false
     var updateAfterClick: Boolean = false
@@ -34,7 +37,20 @@ abstract class Menu {
     var manualClose: Boolean = true
     var closed: Boolean = false
     private var staticTitle: String
-    private var autoUpdateTask: BukkitTask? = null
+    private val autoUpdateTasks = mutableMapOf<UUID, BukkitTask>()
+    private val inventories = mutableMapOf<UUID, Inventory>()
+    private val closing = mutableSetOf<UUID>()
+
+    fun ownsInventory(inventory: Inventory): Boolean = inventories.containsValue(inventory)
+
+    internal fun beginClose(player: Player): Boolean = closing.add(player.uniqueId)
+
+    internal fun finishClose(player: Player) {
+        stopAutoUpdate(player.uniqueId)
+        inventories.remove(player.uniqueId)
+        closing.remove(player.uniqueId)
+        closed = inventories.isEmpty()
+    }
     var fillBackground: Boolean = false
     var filledMaterial: Material = XSupport.resolve(XMaterial.GRAY_STAINED_GLASS_PANE)
 
@@ -66,17 +82,19 @@ abstract class Menu {
     open fun onBackgroundClick(player: Player, slot: Int, clickType: ClickType): Boolean = false
 
     open fun onClose(player: Player, manualClose: Boolean) {
-        stopAutoUpdate()
+        stopAutoUpdate(player.uniqueId)
 //        animationManager.stopAllAnimations()
     }
 
     internal fun createInventory(player: Player): Inventory {
         var title = ChatColor.translateAlternateColorCodes('&', getTitle(player))
-        if (title.length > 32) {
-            title = title.take(31)
+        // 1.8 can't handle titles longer than 32 characters
+        if (title.length > 32 && NMSHandlerFactory.getHandler()?.getServerVersion()?.isBelow(ServerVersion.v1_9_R2) != false) {
+            title = title.take(32)
         }
 
-        val invButtons = getButtons(player)
+        val invButtons = getButtons(player).toMap()
+        buttons.clear()
         var size = size(invButtons)
 
         val minSize = getMinSize()
@@ -86,6 +104,7 @@ abstract class Menu {
             }
         }
 
+        require(size in 9..54 && size % 9 == 0) { "Menu size must be a multiple of nine between 9 and 54: $size" }
         val inv = Bukkit.createInventory(null, size, title)
         // Fill background if enabled
         if (fillBackground) {
@@ -101,13 +120,13 @@ abstract class Menu {
             }
         }
 
-        for (buttonEntry in invButtons.entries) {
-            if (buttonEntry.key >= size) {
+        for ((key, value) in invButtons) {
+            if (key !in 0 until size) {
                 continue
             }
 
-            buttons[buttonEntry.key] = buttonEntry.value
-            inv.setItem(buttonEntry.key, buttonEntry.value.getButtonItem(player))
+            buttons[key] = value
+            inv.setItem(key, value.getButtonItem(player))
         }
 
         if (placeholder) {
@@ -118,7 +137,7 @@ abstract class Menu {
                 " "
             )
 
-            for (index in 0 until size(invButtons)) {
+            for (index in 0 until size) {
                 if (invButtons[index] == null) {
                     buttons[index] = placeholder
                     inv.setItem(index, placeholder.getButtonItem(player))
@@ -132,42 +151,63 @@ abstract class Menu {
     fun updateTitle(player: Player, newTitle: String) {
         val openMenu = currentlyOpenedMenus[player.uniqueId] ?: return
         if (openMenu != this) return
-        val title = ChatColor.translateAlternateColorCodes('&', newTitle)
-        NMSHandlerFactory.getHandler()?.updateMenuTitle(player, title)
+        var title = ChatColor.translateAlternateColorCodes('&', newTitle)
+        if (title.length > 32 && NMSHandlerFactory.getHandler()?.getServerVersion()?.isBelow(ServerVersion.v1_9_R2) != false) {
+            title = title.take(32)
+        }
+        val view = player.openInventory
+        if (view.title == title) return
+        try {
+            InventoryView::class.java.getMethod("setTitle", String::class.java).invoke(view, title)
+        } catch (_: NoSuchMethodException) {
+            val nms = NMSHandlerFactory.getHandler()
+            if (nms?.getServerVersion()?.isBelow(ServerVersion.v1_16_R3) == true) {
+                nms.updateMenuTitle(player, title)
+            }
+        }
     }
 
 
     fun openMenu(player: Player) {
+        if (!Bukkit.isPrimaryThread()) {
+            Bukkit.getScheduler().runTask(UnifyCore.instance, Runnable { openMenu(player) })
+            return
+        }
+        if (!player.isOnline) return
+        val request = openSequence.incrementAndGet()
+        pendingOpens[player.uniqueId] = request
+        val expectedInventory = player.openInventory.topInventory
+        fun complete(success: Boolean) {
+            val action = Runnable {
+                if (pendingOpens[player.uniqueId] != request || !player.isOnline) return@Runnable
+                pendingOpens.remove(player.uniqueId, request)
+                if (async && player.openInventory.topInventory != expectedInventory) return@Runnable
+                if (!success) {
+                    player.sendMessage("${ChatColor.RED}Couldn't load menu...")
+                    return@Runnable
+                }
+                try {
+                    openCustomInventory(player, createInventory(player))
+                } catch (error: Exception) {
+                    UnifyCore.instance.logger.log(java.util.logging.Level.SEVERE, "Could not open menu", error)
+                    player.sendMessage("${ChatColor.RED}Couldn't open menu...")
+                }
+            }
+            if (Bukkit.isPrimaryThread()) action.run()
+            else Bukkit.getScheduler().runTask(UnifyCore.instance, action)
+        }
         if (async) {
             Bukkit.getScheduler().runTaskAsynchronously(UnifyCore.instance, Runnable {
                 try {
-                    asyncLoadResources(player) { successfulLoad ->
-                        if (successfulLoad) {
-                            val inv = createInventory(player)
-
-                            try {
-                                openCustomInventory(player, inv)
-                            } catch (ex: Exception) {
-                                ex.printStackTrace()
-                            }
-                        } else {
-                            player.sendMessage("${ChatColor.RED}Couldn't load menu...")
-                        }
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    player.sendMessage("${ChatColor.RED}Couldn't load menu...")
+                    asyncLoadResources(player, ::complete)
+                } catch (error: Exception) {
+                    UnifyCore.instance.logger.log(java.util.logging.Level.SEVERE, "Could not load menu resources", error)
+                    complete(false)
                 }
             })
-        } else {
-            val inv = createInventory(player)
-
-            try {
-                openCustomInventory(player, inv)
-            } catch (ex: Exception) {
-                ex.printStackTrace()
-            }
-        }
+        } else if (player.uniqueId in closing) {
+            Bukkit.getScheduler().runTask(UnifyCore.instance, Runnable { complete(true) })
+        } else complete(true)
     }
 
     fun open(player: Player) {
@@ -184,65 +224,60 @@ abstract class Menu {
 
         // call abstract onOpen
         closed = false
-        onOpen(player)
+        manualClose = true
+        inventories[player.uniqueId] = player.openInventory.topInventory
+        try {
+            onOpen(player)
+        } catch (error: Exception) {
+            player.closeInventory()
+            finishClose(player)
+            currentlyOpenedMenus.remove(player.uniqueId, this)
+            throw error
+        }
 
         // Start auto-update for animated buttons
-        if (autoUpdate && autoUpdateTask == null) {
+        if (autoUpdate && player.uniqueId !in autoUpdateTasks) {
             startAutoUpdate(player)
         }
     }
 
     private fun startAutoUpdate(player: Player) {
-        autoUpdateTask = Bukkit.getScheduler().runTaskTimer(
+        autoUpdateTasks[player.uniqueId] = Bukkit.getScheduler().runTaskTimer(
             UnifyCore.instance,
             Runnable {
-                if (currentlyOpenedMenus[player.uniqueId] != this) {
-                    stopAutoUpdate()
+                if (!player.isOnline || currentlyOpenedMenus[player.uniqueId] !== this || !ownsInventory(player.openInventory.topInventory)) {
+                    stopAutoUpdate(player.uniqueId)
                     return@Runnable
                 }
 
                 // Call preAutoUpdate hook
                 preAutoUpdate()
+                if (currentlyOpenedMenus[player.uniqueId] !== this || closed) return@Runnable
 
                 val inv = player.openInventory.topInventory
 
-                if (updateAllButtons) {
-                    // Update ALL registered buttons (for menus that need full refresh)
-                    buttons.forEach { (slot, button) ->
-                        if (slot < inv.size) {
-                            inv.setItem(slot, button.getButtonItem(player))
-                        }
+                val now = System.currentTimeMillis()
+                for ((slot, button) in buttons) {
+                    if (slot !in 0 until inv.size) continue
+                    val animate = button.isAnimated() && now - button.lastAnimation >= button.getAnimationInterval() * 50L
+                    if (animate) {
+                        button.preAnimationUpdate()
+                        button.lastAnimation = now
                     }
-                } else {
-                    // Only update animated buttons
-                    buttons.forEach { (slot, button) ->
-                        if (button.isAnimated()) {
-                            val currentTime = System.currentTimeMillis()
-                            val interval = button.getAnimationInterval() * 50 // Convert ticks to ms
-
-                            if (currentTime - button.lastAnimation >= interval) {
-                                button.preAnimationUpdate()
-                                button.lastAnimation = currentTime
-
-                                // Update the item in inventory
-                                if (slot < inv.size) {
-                                    inv.setItem(slot, button.getButtonItem(player))
-                                }
-                            }
-                        }
+                    if (updateAllButtons || animate) {
+                        val item = button.getButtonItem(player)
+                        if (inv.getItem(slot) != item) inv.setItem(slot, item)
                     }
                 }
 
-                player.updateInventory()
             },
             0L,
-            getAutoUpdateTicks()
+            getAutoUpdateTicks().coerceAtLeast(1L)
         )
     }
 
-    private fun stopAutoUpdate() {
-        autoUpdateTask?.cancel()
-        autoUpdateTask = null
+    private fun stopAutoUpdate(uuid: UUID) {
+        autoUpdateTasks.remove(uuid)?.cancel()
     }
 
     /**
@@ -251,14 +286,14 @@ abstract class Menu {
      */
     fun refreshButtons(player: Player) {
         val inv = player.openInventory?.topInventory ?: return
-        if (currentlyOpenedMenus[player.uniqueId] != this) return
-        
+        if (currentlyOpenedMenus[player.uniqueId] !== this || !ownsInventory(inv)) return
+
         buttons.forEach { (slot, button) ->
-            if (slot < inv.size) {
-                inv.setItem(slot, button.getButtonItem(player))
+            if (slot in 0 until inv.size) {
+                val item = button.getButtonItem(player)
+                if (inv.getItem(slot) != item) inv.setItem(slot, item)
             }
         }
-        player.updateInventory()
     }
 
     /**
@@ -327,19 +362,27 @@ abstract class Menu {
     open fun preAutoUpdate() {}
 
     private fun openCustomInventory(player: Player, inv: Inventory) {
-        // Anvil sessions own the open inventory; close them before a normal menu
+        val current = currentlyOpenedMenus[player.uniqueId]
+        if (current === this && ownsInventory(player.openInventory.topInventory)) {
+            check(inv.size == player.openInventory.topInventory.size) { "Close this menu before changing its size" }
+            player.openInventory.topInventory.contents = inv.contents
+            updateTitle(player, getTitle(player))
+            return
+        }
         AnvilSession.closeIfOpen(player, sendClosePacket = true)
-
         val title = ChatColor.translateAlternateColorCodes('&', getTitle(player))
-        val nms = NMSHandlerFactory.getHandler()
-
-        // Version-safe inventory open
-        nms?.openMenuInventory(player, inv, title) ?: player.openInventory(inv)
-
+        NMSHandlerFactory.getHandler()?.openMenuInventory(player, inv, title) ?: player.openInventory(inv)
+        // InventoryOpenEvent can reject or redirect an open.
+        if (player.openInventory.topInventory != inv) return
         update(player)
     }
 
     companion object {
+        private val openSequence = AtomicLong()
+        private val pendingOpens = ConcurrentHashMap<UUID, Long>()
+
+        internal fun cancelPendingOpen(uuid: UUID) { pendingOpens.remove(uuid) }
+
         @JvmStatic
         var currentlyOpenedMenus: MutableMap<UUID, Menu> = ConcurrentHashMap()
     }

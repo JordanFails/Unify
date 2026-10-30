@@ -2,6 +2,7 @@ package me.jordanfails.unify.tab
 
 import com.google.common.primitives.Ints
 import me.jordanfails.unify.UnifyCore
+import me.jordanfails.unify.nametag.NametagHandler
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
 import org.bukkit.scheduler.BukkitTask
@@ -12,6 +13,7 @@ object TabHandler {
 
     private val playerTabs = ConcurrentHashMap<UUID, TabInfo>()
     private var providers = ArrayList<TabProvider>()
+    private val sortProviders = ArrayList<TabSortProvider>()
 
     private var enabled: Boolean = false
     private var refreshTask: BukkitTask? = null
@@ -50,6 +52,42 @@ object TabHandler {
     fun registerProvider(newProvider: TabProvider) {
         providers.add(newProvider)
         providers.sortWith { a, b -> Ints.compare(b.weight, a.weight) }
+    }
+
+    /**
+     * Register a [TabSortProvider] from another plugin. Sort providers survive `/unify reload`
+     * (they are owned by the plugin that registered them, not by config).
+     *
+     * Already-online players are refreshed so the new order applies immediately.
+     */
+    fun registerSortProvider(newProvider: TabSortProvider) {
+        sortProviders.add(newProvider)
+        sortProviders.sortWith { a, b -> Ints.compare(b.weight, a.weight) }
+
+        if (!NametagHandler.isEnabled()) {
+            UnifyCore.instance.logger.warning(
+                "Tab sort provider '${newProvider.name}' registered, but nametags are disabled. " +
+                    "Tab sorting uses nametag teams and will not apply until nametags are enabled."
+            )
+            return
+        }
+
+        Bukkit.getOnlinePlayers().forEach { NametagHandler.reloadPlayer(it) }
+    }
+
+    /**
+     * Highest-priority non-null sort weight for [player], or `0` when no provider has an opinion.
+     * Higher values appear higher in the tab list.
+     */
+    fun sortWeight(player: Player): Int {
+        var providerIndex = 0
+        while (providerIndex < sortProviders.size) {
+            val weight = sortProviders[providerIndex++].fetchSortWeight(player)
+            if (weight != null) {
+                return weight
+            }
+        }
+        return 0
     }
 
     fun initiatePlayer(player: Player) {
@@ -111,5 +149,13 @@ object TabHandler {
 
     fun providerCount(): Int {
         return providers.size
+    }
+
+    fun sortProviderCount(): Int {
+        return sortProviders.size
+    }
+
+    fun sortProviders(): List<TabSortProvider> {
+        return sortProviders.toList()
     }
 }

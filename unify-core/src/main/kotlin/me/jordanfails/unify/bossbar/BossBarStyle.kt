@@ -15,8 +15,7 @@ enum class BossBarStyle {
     companion object {
         @JvmStatic
         fun fromString(name: String): BossBarStyle? {
-            val key = name.trim().uppercase().replace('-', '_').replace(' ', '_')
-            return when (key) {
+            return when (val key = name.trim().uppercase().replace('-', '_').replace(' ', '_')) {
                 "NOTCHED_6", "SEGMENTED6", "6" -> SEGMENTED_6
                 "NOTCHED_10", "SEGMENTED10", "10" -> SEGMENTED_10
                 "NOTCHED_12", "SEGMENTED12", "12" -> SEGMENTED_12

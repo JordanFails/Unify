@@ -16,7 +16,7 @@ abstract class NametagProvider(val name: String, val weight: Int) {
     companion object {
         @JvmStatic
         fun createNametag(prefix: String, suffix: String): NametagInfo {
-            return NametagHandler.getOrCreate(prefix, suffix)
+            return NametagInfo("", prefix, suffix)
         }
     }
 

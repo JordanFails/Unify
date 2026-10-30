@@ -91,12 +91,10 @@ object BossBarHandler {
         if (!enabled) return
         if (NPCRegistry.isNpc(player)) return
 
-        var provided: BossBarInfo? = null
-        var providerIndex = 0
-
-        while (provided == null && providerIndex < providers.size) {
-            provided = providers[providerIndex++].fetchBossBar(player)
-        }
+        // Every provider's bars stack, highest weight on top; a repeated line id keeps its first row.
+        val results = providers.mapNotNull { it.fetchBossBar(player) }
+        val provided = if (results.isEmpty()) null
+            else BossBarInfo(results.flatMap { it.lines }.distinctBy { it.id })
 
         if (provided == null) {
             // No provider has anything to show. Whatever the player is still seeing describes a

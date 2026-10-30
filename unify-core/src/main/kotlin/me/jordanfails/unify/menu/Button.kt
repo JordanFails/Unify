@@ -98,8 +98,9 @@ abstract class Button {
         return false
     }
 
+    /** Delay between animation frames, in server ticks. */
     open fun getAnimationInterval(): Long {
-        return 500L
+        return 10L
     }
 
     open fun preAnimationUpdate() {

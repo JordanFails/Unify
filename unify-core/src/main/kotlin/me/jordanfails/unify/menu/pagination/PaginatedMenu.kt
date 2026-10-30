@@ -37,7 +37,9 @@ abstract class PaginatedMenu : Menu() {
         return if (buttonAmount == 0) {
             1
         } else {
-            ceil(buttonAmount / getMaxItemsPerPage(player).toDouble()).toInt()
+            val capacity = getAllPagesButtonSlots().size.takeIf { it > 0 } ?: getMaxItemsPerPage(player)
+            require(capacity > 0) { "A page must have at least one item slot" }
+            ceil(buttonAmount / capacity.toDouble()).toInt()
         }
     }
 
@@ -71,8 +73,8 @@ abstract class PaginatedMenu : Menu() {
             val maxIndex = page * maxPerPage
 
             for ((index, entry) in getAllPagesButtons(player).entries.withIndex()) {
-                if (index in minIndex until min(maxIndex, buttonSlots.size)) {
-                    buttons[buttonSlots[index]] = entry.value
+                if (index in minIndex until maxIndex) {
+                    buttons[buttonSlots[index - minIndex]] = entry.value
                 }
             }
         }
