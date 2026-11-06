@@ -26,6 +26,8 @@ import org.bukkit.craftbukkit.v1_12_R1.event.CraftEventFactory
 import org.bukkit.craftbukkit.v1_12_R1.inventory.CraftInventory
 import org.bukkit.craftbukkit.v1_12_R1.inventory.CraftItemStack
 import org.bukkit.entity.Player
+import org.bukkit.event.inventory.InventoryType
+import org.bukkit.craftbukkit.v1_12_R1.inventory.CraftContainer
 import org.bukkit.inventory.Inventory
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.meta.SkullMeta
@@ -110,6 +112,10 @@ class NMSHandler_v1_12_R1 : NMSHandler {
 
 
     override fun openMenuInventory(player: Player, inventory: Inventory, title: String) {
+        if (inventory.type != InventoryType.CHEST) {
+            player.openInventory(inventory)
+            return
+        }
         val craft = player as CraftPlayer
         val handle = craft.handle
         val windowId = handle.nextContainerCounter()
@@ -126,8 +132,14 @@ class NMSHandler_v1_12_R1 : NMSHandler {
         val craft = player as CraftPlayer
         val handle = craft.handle
         val container = handle.activeContainer
+        val top = player.openInventory.topInventory
+        val windowType = if (top.type == InventoryType.DROPPER) {
+            "minecraft:dropper"
+        } else {
+            CraftContainer.getNotchInventoryType(top.type)
+        }
         val safeTitle = ChatComponentText(title)
-        val packet = PacketPlayOutOpenWindow(container.windowId, "minecraft:container", safeTitle, container.slots.size)
+        val packet = PacketPlayOutOpenWindow(container.windowId, windowType, safeTitle, top.size)
         handle.playerConnection.sendPacket(packet)
         handle.updateInventory(container)
     }

@@ -13,6 +13,7 @@ import org.bukkit.ChatColor
 import org.bukkit.Material
 import org.bukkit.entity.Player
 import org.bukkit.event.inventory.ClickType
+import org.bukkit.event.inventory.InventoryType
 import org.bukkit.inventory.Inventory
 import org.bukkit.inventory.InventoryView
 import org.bukkit.inventory.ItemStack
@@ -95,17 +96,15 @@ abstract class Menu {
 
         val invButtons = getButtons(player).toMap()
         buttons.clear()
-        var size = size(invButtons)
-
-        val minSize = getMinSize()
-        if (minSize != -1) {
-            if (minSize > size) {
-                size = minSize
-            }
+        val type = getInventoryType()
+        val inv = if (type == InventoryType.CHEST) {
+            val size = maxOf(size(invButtons), getMinSize())
+            require(size in 9..54 && size % 9 == 0) { "Menu size must be a multiple of nine between 9 and 54: $size" }
+            Bukkit.createInventory(null, size, title)
+        } else {
+            Bukkit.createInventory(null, type, title)
         }
-
-        require(size in 9..54 && size % 9 == 0) { "Menu size must be a multiple of nine between 9 and 54: $size" }
-        val inv = Bukkit.createInventory(null, size, title)
+        val size = inv.size
         // Fill background if enabled
         if (fillBackground) {
             val filler = Button.placeholder(
@@ -214,10 +213,6 @@ abstract class Menu {
         openMenu(player)
     }
 
-    private fun getWindowType(size: Int): String {
-        return "minecraft:chest"
-    }
-
     fun update(player: Player) {
         // set open menu reference to this menu
         currentlyOpenedMenus[player.uniqueId] = this
@@ -315,6 +310,9 @@ abstract class Menu {
         return (ceil((highest + 1) / 9.0) * 9.0).toInt()
     }
 
+    /** Non-chest types use their fixed inventory size instead of [size] and [getMinSize]. */
+    open fun getInventoryType(): InventoryType = InventoryType.CHEST
+
     /**
      * Minimum inventory size. Return -1 for no minimum.
      *
@@ -364,7 +362,9 @@ abstract class Menu {
     private fun openCustomInventory(player: Player, inv: Inventory) {
         val current = currentlyOpenedMenus[player.uniqueId]
         if (current === this && ownsInventory(player.openInventory.topInventory)) {
-            check(inv.size == player.openInventory.topInventory.size) { "Close this menu before changing its size" }
+            check(inv.size == player.openInventory.topInventory.size && inv.type == player.openInventory.topInventory.type) {
+                "Close this menu before changing its size or inventory type"
+            }
             player.openInventory.topInventory.contents = inv.contents
             updateTitle(player, getTitle(player))
             return

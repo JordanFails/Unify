@@ -11,6 +11,7 @@ import me.jordanfails.unify.nms.NMSHandlerFactory
 import me.jordanfails.unify.utils.ItemBuilder
 import org.bukkit.Material
 import org.bukkit.entity.Player
+import org.bukkit.event.inventory.InventoryType
 import org.bukkit.inventory.ItemStack
 import java.util.concurrent.ConcurrentHashMap
 
@@ -546,6 +547,7 @@ abstract class InteractiveMenu : Menu {
     }
 
     private fun resolveSize(player: Player): Int {
+        if (getInventoryType() != InventoryType.CHEST) return getInventoryType().defaultSize
         val min = getMinSize().takeIf { it > 0 } ?: 27
         var highest = min - 1
         getAllItemSlots().forEach { highest = maxOf(highest, it) }

@@ -13,6 +13,7 @@ import me.jordanfails.unify.utils.XSupport
 import org.bukkit.Material
 import org.bukkit.entity.Player
 import org.bukkit.event.inventory.ClickType
+import org.bukkit.event.inventory.InventoryType
 import org.bukkit.inventory.ItemStack
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -40,6 +41,7 @@ fun menu(title: String = "&8Menu", block: PlainMenuBuilder.() -> Unit): Menu =
 
 @MenuDslMarker
 class PlainMenuBuilder(private var title: String) {
+    private var inventoryType: InventoryType = InventoryType.CHEST
     private var rows: Int = 3
     private val buttons = linkedMapOf<Int, Button>()
     private var autoUpdate: Boolean = false
@@ -51,6 +53,9 @@ class PlainMenuBuilder(private var title: String) {
     private var mask: LayoutMask? = null
 
     fun title(title: String) { this.title = title }
+
+    /** Fixed-size types ignore [rows]; use absolute slot indexes. */
+    fun type(type: InventoryType) { inventoryType = type }
 
     fun rows(rows: Int) {
         require(rows in 1..6) { "rows must be 1..6" }
@@ -102,6 +107,8 @@ class PlainMenuBuilder(private var title: String) {
                 this.updateAfterClick = self.updateAfterClick
                 this.placeholder = self.fillEmpty
             }
+
+            override fun getInventoryType(): InventoryType = self.inventoryType
 
             override fun getMinSize(): Int = self.rows * 9
 
@@ -609,6 +616,7 @@ fun interactiveMenu(title: String = "&8Menu", block: InteractiveMenuBuilder.() -
 
 @MenuDslMarker
 class InteractiveMenuBuilder(private var title: String) {
+    private var inventoryType: InventoryType = InventoryType.CHEST
     private var rows: Int = 6
     private val interactive = linkedSetOf<Int>()
     private val inputs = linkedSetOf<Int>()
@@ -626,6 +634,9 @@ class InteractiveMenuBuilder(private var title: String) {
     private var contentsChanged: (InteractiveMenu.(Player) -> Unit)? = null
 
     fun title(title: String) { this.title = title }
+
+    /** Fixed-size types ignore [rows]; use absolute slot indexes. */
+    fun type(type: InventoryType) { inventoryType = type }
     fun rows(rows: Int) {
         require(rows in 1..6)
         this.rows = rows
@@ -712,6 +723,8 @@ class InteractiveMenuBuilder(private var title: String) {
                 autoRefreshResults = self.autoResults
                 fillBackground = self.fillBg
             }
+
+            override fun getInventoryType(): InventoryType = self.inventoryType
 
             override fun getMinSize(): Int = self.rows * 9
             override fun getTitle(player: Player): String = self.title
