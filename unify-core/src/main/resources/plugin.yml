@@ -1,5 +1,5 @@
 name: unify-core
-version: '1.0-SNAPSHOT'
+version: '${version}'
 main: me.jordanfails.unify.UnifyCore
 api-version: '1.18'
 author: "JordanFails"

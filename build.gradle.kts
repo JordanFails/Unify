@@ -6,11 +6,17 @@ plugins {
 }
 
 group = "me.jordanfails"
-version = "1.0-SNAPSHOT"
+val unifyVersion = providers.gradleProperty("unifyVersion").get()
+version = unifyVersion
 
 subprojects {
     // apply kotlin plugin properly
     plugins.apply("org.jetbrains.kotlin.jvm")
+
+    // Unify's own modules use its internals and beta features freely; dependents get an error or warning.
+    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+        compilerOptions.optIn.addAll("me.jordanfails.unify.UnifyInternal", "me.jordanfails.unify.Beta")
+    }
 
     repositories {
         mavenCentral()
@@ -21,19 +27,19 @@ subprojects {
 
 // Define paths to all jars we want to bundle
 // Legacy JARs (Java 8 compatible: 1.8, 1.9, 1.12, 1.16)
-val legacyCoreJar = file("unify-core/build/libs/Unify-1.0-SNAPSHOT-legacy.jar")
-val nms_v1_8_R3 = file("unify-nms/unify-nms-v1_8_R3/build/libs/unify-nms-v1_8_R3-1.0-SNAPSHOT.jar")
-val nms_v1_9_R2 = file("unify-nms/unify-nms-v1_9_R2/build/libs/unify-nms-v1_9_R2-1.0-SNAPSHOT.jar")
-val nms_v1_12_R1 = file("unify-nms/unify-nms-v1_12_R1/build/libs/unify-nms-v1_12_R1-1.0-SNAPSHOT.jar")
-val nms_v1_16_R3 = file("unify-nms/unify-nms-v1_16_R3/build/libs/unify-nms-v1_16_R3-1.0-SNAPSHOT.jar")
+val legacyCoreJar = file("unify-core/build/libs/Unify-$unifyVersion-legacy.jar")
+val nms_v1_8_R3 = file("unify-nms/unify-nms-v1_8_R3/build/libs/unify-nms-v1_8_R3-$unifyVersion.jar")
+val nms_v1_9_R2 = file("unify-nms/unify-nms-v1_9_R2/build/libs/unify-nms-v1_9_R2-$unifyVersion.jar")
+val nms_v1_12_R1 = file("unify-nms/unify-nms-v1_12_R1/build/libs/unify-nms-v1_12_R1-$unifyVersion.jar")
+val nms_v1_16_R3 = file("unify-nms/unify-nms-v1_16_R3/build/libs/unify-nms-v1_16_R3-$unifyVersion.jar")
 
-// Modern JARs (Java 17+ compatible: 1.20, 1.21, 26)
-val modernCoreJar = file("unify-core/build/libs/Unify-1.0-SNAPSHOT-modern.jar")
-val nms_v1_20_R4 = file("unify-nms/unify-nms-v1_20_R4/build/libs/unify-nms-v1_20_R4-1.0-SNAPSHOT.jar")
+// Modern JARs (Paper 1.20.6+: 1.20.6, 1.21.x, 26.x)
+val modernCoreJar = file("unify-core/build/libs/Unify-$unifyVersion-modern.jar")
+val nms_v1_20_R4 = file("unify-nms/unify-nms-v1_20_R4/build/libs/unify-nms-v1_20_R4-$unifyVersion.jar")
 // Must match what the module's `jar` task actually produces. This pointed at a stale
 // `-dev` artifact, so every change to the 1.21 handler was silently left out of the bundle.
-val nms_v1_21_R1 = file("unify-nms/unify-nms-v1_21_R1/build/libs/unify-nms-v1_21_R1-1.0-SNAPSHOT.jar")
-val nms_v26_R1 = file("unify-nms/unify-nms-v26_R1/build/libs/unify-nms-v26_R1-1.0-SNAPSHOT.jar")
+val nms_v1_21_R1 = file("unify-nms/unify-nms-v1_21_R1/build/libs/unify-nms-v1_21_R1-$unifyVersion.jar")
+val nms_v26_R1 = file("unify-nms/unify-nms-v26_R1/build/libs/unify-nms-v26_R1-$unifyVersion.jar")
 
 // Task to build legacy modules (Java 8)
 tasks.register("buildLegacy") {
@@ -49,7 +55,7 @@ tasks.register("buildLegacy") {
 // Task to build modern modules (Java 17+)
 tasks.register("buildModern") {
     group = "build"
-    description = "Build modern modules (Java 17+ - for 1.17+ servers)"
+    description = "Build modern modules (Paper 1.20.6+)"
     dependsOn(":unify-core:shadowJarModern")
     dependsOn(":unify-nms:unify-nms-v1_16_R3:jar")
     dependsOn(":unify-nms:unify-nms-v1_20_R4:jar")
@@ -57,6 +63,7 @@ tasks.register("buildModern") {
     dependsOn(":unify-nms:unify-nms-v26_R1:jar")
 }
 
+// Missing input jars fail the build (zipTree on a missing file) so a release can't silently lose a handler.
 // Legacy bundled plugin (Java 8 - for 1.8 to 1.16 servers)
 val bundledLegacyTask = tasks.register<Jar>("bundledLegacy") {
     group = "build"
@@ -65,60 +72,96 @@ val bundledLegacyTask = tasks.register<Jar>("bundledLegacy") {
     dependsOn("buildLegacy")
     mustRunAfter("buildLegacy")
     
+    // Unify-<version>-legacy.jar: Java 8 build for 1.8-1.16 servers.
     archiveBaseName.set("Unify")
-    archiveVersion.set("1.0-SNAPSHOT")
-    archiveClassifier.set("")
-    destinationDirectory.set(layout.buildDirectory.dir("libs/legacy"))
+    archiveVersion.set(unifyVersion)
+    archiveClassifier.set("legacy")
+    destinationDirectory.set(layout.buildDirectory.dir("libs"))
     
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     
-    from({ if (legacyCoreJar.exists()) zipTree(legacyCoreJar) else emptyList<Any>() })
-    from({ if (nms_v1_8_R3.exists()) zipTree(nms_v1_8_R3) else emptyList<Any>() })
-    from({ if (nms_v1_9_R2.exists()) zipTree(nms_v1_9_R2) else emptyList<Any>() })
-    from({ if (nms_v1_12_R1.exists()) zipTree(nms_v1_12_R1) else emptyList<Any>() })
-    from({ if (nms_v1_16_R3.exists()) zipTree(nms_v1_16_R3) else emptyList<Any>() })
+    from({ zipTree(legacyCoreJar) })
+    from({ zipTree(nms_v1_8_R3) })
+    from({ zipTree(nms_v1_9_R2) })
+    from({ zipTree(nms_v1_12_R1) })
+    from({ zipTree(nms_v1_16_R3) })
 }
 
-// Modern bundled plugin (Java 17+ - for 1.17+ servers)
+// Modern bundled plugin (Paper 1.20.6+)
 val bundledModernTask = tasks.register<Jar>("bundledModern") {
     group = "build"
-    description = "Creates the modern Unify plugin JAR (Java 17+ - for 1.17+ servers)"
+    description = "Creates the modern Unify plugin JAR (Paper 1.20.6+)"
     
     dependsOn("buildModern")
     mustRunAfter("buildModern")
     
+    // Unify-<version>-modern.jar: Paper 1.20.6+. Plugins should compile against this one.
     archiveBaseName.set("Unify")
-    archiveVersion.set("1.0-SNAPSHOT")
-    archiveClassifier.set("")
-    destinationDirectory.set(layout.buildDirectory.dir("libs/modern"))
+    archiveVersion.set(unifyVersion)
+    archiveClassifier.set("modern")
+    destinationDirectory.set(layout.buildDirectory.dir("libs"))
     
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     
-    from({ if (modernCoreJar.exists()) zipTree(modernCoreJar) else emptyList<Any>() })
-    from({ if (nms_v1_16_R3.exists()) zipTree(nms_v1_16_R3) else emptyList<Any>() })
-    from({ if (nms_v1_20_R4.exists()) zipTree(nms_v1_20_R4) else emptyList<Any>() })
-    from({ if (nms_v1_21_R1.exists()) zipTree(nms_v1_21_R1) else emptyList<Any>() })
-    from({ if (nms_v26_R1.exists()) zipTree(nms_v26_R1) else emptyList<Any>() })
+    // NMS handlers are Mojang-mapped; without this Paper 1.20.5+ would try to remap them as Spigot-mapped.
+    manifest { attributes["paperweight-mappings-namespace"] = "mojang" }
+
+    from({ zipTree(modernCoreJar) })
+    from({ zipTree(nms_v1_16_R3) })
+    from({ zipTree(nms_v1_20_R4) })
+    from({ zipTree(nms_v1_21_R1) })
+    from({ zipTree(nms_v26_R1) })
 }
 
-// Publishing configuration
+// Sources let IDEs show Unify's KDoc and step into its code from a dependent plugin.
+val sourcesJarTask = tasks.register<Jar>("sourcesJar") {
+    archiveBaseName.set("Unify")
+    archiveVersion.set(unifyVersion)
+    archiveClassifier.set("sources")
+    destinationDirectory.set(layout.buildDirectory.dir("libs"))
+    from("unify-core/src/main/kotlin", "unify-core/src/main/java", "unify-core/src/main/resources")
+}
+
+// The bundled jars already contain ACF, XSeries and Adventure, so the POMs only list Kotlin.
 publishing {
     publications {
-        create<MavenPublication>("legacy") {
-            groupId = "me.jordanfails"
-            artifactId = "unify-legacy"
-            version = "1.0-SNAPSHOT"
-            artifact(bundledLegacyTask)
-        }
-        create<MavenPublication>("modern") {
-            groupId = "me.jordanfails"
-            artifactId = "unify-modern"
-            version = "1.0-SNAPSHOT"
-            artifact(bundledModernTask)
+        listOf("legacy" to bundledLegacyTask, "modern" to bundledModernTask).forEach { (flavor, jar) ->
+            create<MavenPublication>(flavor) {
+                groupId = "me.jordanfails"
+                artifactId = "unify-$flavor"
+                version = unifyVersion
+                artifact(jar) { classifier = null }
+                artifact(sourcesJarTask) { classifier = "sources" }
+                pom {
+                    // The modern jar doesn't bundle Kotlin (the legacy one does); either way Java callers
+                    // need Kotlin's types on their compile classpath for Unify's lambda APIs.
+                    withXml {
+                        val dependency = asNode().appendNode("dependencies").appendNode("dependency")
+                        dependency.appendNode("groupId", "org.jetbrains.kotlin")
+                        dependency.appendNode("artifactId", "kotlin-stdlib")
+                        dependency.appendNode("version", "2.2.21")
+                        dependency.appendNode("scope", "compile")
+                    }
+                    name.set("Unify ($flavor)")
+                    description.set("All-in-one utility plugin for building Minecraft plugins in Kotlin and Java.")
+                    url.set("https://github.com/JordanFails/Unify")
+                }
+            }
         }
     }
     repositories {
         mavenLocal()
+        // Set unifyRepoUrl/unifyRepoUser/unifyRepoPassword (e.g. in ~/.gradle/gradle.properties) to publish remotely.
+        providers.gradleProperty("unifyRepoUrl").orNull?.let { repoUrl ->
+            maven {
+                name = "unify"
+                url = uri(repoUrl)
+                credentials {
+                    username = providers.gradleProperty("unifyRepoUser").orNull
+                    password = providers.gradleProperty("unifyRepoPassword").orNull
+                }
+            }
+        }
     }
 }
 

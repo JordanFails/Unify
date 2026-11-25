@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "me.jordanfails"
-version = "1.0-SNAPSHOT"
+version = providers.gradleProperty("unifyVersion").get()
 
 repositories {
     mavenCentral()

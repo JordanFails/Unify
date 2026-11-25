@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "me.jordanfails"
-version = "1.0-SNAPSHOT"
+version = providers.gradleProperty("unifyVersion").get()
 
 repositories {
     mavenCentral()
@@ -31,7 +31,13 @@ repositories {
     }
 }
 
+// Bundled into the legacy jar only; modern servers load these through plugin.yml `libraries`.
+val legacyRuntime: Configuration by configurations.creating
+
 dependencies {
+    legacyRuntime(kotlin("stdlib"))
+    legacyRuntime(kotlin("reflect"))
+    legacyRuntime("com.google.code.gson:gson:2.14.0")
     // Compile against 1.16.5 API (has modern Material names, runs on Java 8-16)
     compileOnly("org.spigotmc:spigot-api:1.16.5-R0.1-SNAPSHOT")
     compileOnly("com.mojang:authlib:1.5.25") // Java 8 compatible version
@@ -81,14 +87,35 @@ fun com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar.excludeKotlinRunt
 }
 
 tasks {
-    // Legacy shadow jar (Java 8 - for 1.8 to 1.16 servers)
+    processResources {
+        val pluginVersion = project.version.toString()
+        inputs.property("version", pluginVersion)
+        filesMatching("plugin.yml") { expand("version" to pluginVersion) }
+    }
+
+    // Legacy shadow jar (Java 8 - for 1.8 to 1.16 servers). Those servers have no plugin library
+    // loader, so Kotlin and gson ship inside the jar and plugin.yml drops its `libraries` block.
     val shadowJarLegacy by registering(com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar::class) {
         from(sourceSets.main.get().output)
-        configurations = listOf(project.configurations.runtimeClasspath.get())
+        configurations = listOf(project.configurations.runtimeClasspath.get(), legacyRuntime)
         archiveBaseName.set("Unify")
         archiveClassifier.set("legacy")
-        excludeKotlinRuntime()
-        
+        // The Mongo driver's record codec is Java 17 bytecode; nothing on a Java 8 server can use it.
+        exclude("org/bson/codecs/record/**")
+
+        filesMatching("plugin.yml") {
+            var inLibraries = false
+            filter { line ->
+                when {
+                    // 1.13-1.16 reject newer api-versions; 1.8-1.12 ignore the key.
+                    line.startsWith("api-version:") -> "api-version: '1.13'"
+                    line.startsWith("libraries:") -> { inLibraries = true; "" }
+                    inLibraries && line.startsWith("  -") -> ""
+                    else -> { inLibraries = false; line }
+                }
+            }
+        }
+
         // Ensure Java 8 bytecode
         manifest {
             attributes["Multi-Release"] = false
@@ -104,7 +131,8 @@ tasks {
         excludeKotlinRuntime()
     }
     
-    // Default shadowJar uses legacy for compatibility
+    // Plain shadowJar has the modern layout (no Kotlin, `libraries` in plugin.yml). Release jars come from
+    // the root project's bundledLegacy/bundledModern tasks, which also add the NMS handlers.
     shadowJar {
         archiveBaseName.set("Unify")
         archiveClassifier.set("")
