@@ -10,6 +10,7 @@ import me.jordanfails.unify.menu.Menu
 import me.jordanfails.unify.nametag.NametagHandler
 import me.jordanfails.unify.npc.NPCRegistry
 import me.jordanfails.unify.scoreboard.ScoreboardHandler
+import me.jordanfails.unify.storage.UnifyMongo
 import me.jordanfails.unify.tab.TabHandler
 import me.jordanfails.unify.utils.command.CommonCommandContext
 import me.jordanfails.unify.visibility.VisibilityHandler
@@ -159,6 +160,7 @@ object UnifyPlugins : Listener {
             BossBarManager::forgetPlugin,
             VisibilityHandler::forgetPlugin,
             NPCRegistry::forgetPlugin,
+            UnifyMongo::forgetPlugin,
         )
         for (cleanup in cleanups) plugin.guarded("clean up after ${plugin.name}") { cleanup(plugin) }
     }

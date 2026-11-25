@@ -3,6 +3,7 @@ package me.jordanfails.unify
 import me.jordanfails.unify.module.UnifyModule
 import me.jordanfails.unify.module.UnifyModules
 import me.jordanfails.unify.plugin.UnifyPlugins
+import me.jordanfails.unify.storage.UnifyMongo
 import me.jordanfails.unify.request.PlayerRequests
 import me.jordanfails.unify.request.RequestCommand
 import me.jordanfails.unify.preview.WorldPreviews
@@ -114,6 +115,7 @@ class UnifyCore : JavaPlugin() {
         }
         modules.ifEnabled(UnifyModule.NPCS) { NPCRegistry.disable() }
         modules.ifEnabled(UnifyModule.HOLOGRAMS) { HologramManager.disable() }
+        UnifyMongo.closeAll()
         audience?.close()
         audience = null
     }

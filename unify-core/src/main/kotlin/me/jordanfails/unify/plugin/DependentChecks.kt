@@ -13,6 +13,7 @@ internal object DependentChecks {
     private val sharedLibraries = mapOf(
         "co/aikar/commands/BaseCommand.class" to "ACF",
         "com/cryptomorin/xseries/XMaterial.class" to "XSeries",
+        "me/jordanfails/honey/DataHandler.class" to "Honey",
     )
 
     fun run(core: Plugin, plugins: Array<Plugin>) {
