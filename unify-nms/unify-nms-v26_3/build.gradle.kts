@@ -1,0 +1,43 @@
+plugins {
+    kotlin("jvm")
+    id("com.gradleup.shadow") version "9.4.3"
+    id("io.papermc.paperweight.userdev") version "2.0.0-beta.21"
+}
+
+group = "me.jordanfails"
+version = providers.gradleProperty("unifyVersion").get()
+
+repositories {
+    mavenCentral()
+    maven("https://repo.papermc.io/repository/maven-public/") {
+        name = "papermc-repo"
+    }
+    maven("https://repo.codemc.io/repository/maven-public/") {
+        name = "codemc"
+    }
+}
+
+dependencies {
+    compileOnly(project(":unify-core"))
+    compileOnly("de.tr7zw:item-nbt-api-plugin:2.15.5")
+    paperweight.paperDevBundle("26.3.build.262-stable")
+}
+
+kotlin {
+    jvmToolchain(26)
+}
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(26))
+    }
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile>().configureEach {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_24)
+    }
+}
+
+// Unify ships these Mojang-mapped (the modern bundle sets the mappings manifest), so the plain jar is the
+// artifact; reobfuscating is wasted work on 1.20/1.21 and impossible on 26.x, which has no obfuscation.
+paperweight.reobfArtifactConfiguration = io.papermc.paperweight.userdev.ReobfArtifactConfiguration.MOJANG_PRODUCTION

@@ -1,0 +1,109 @@
+name: Paper version updates
+
+on:
+  push:
+    branches: [main, master]
+  schedule:
+    - cron: '37 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: paper-version-updates
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    outputs:
+      releases: ${{ steps.discover.outputs.releases }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Find new stable Paper dev bundles
+        id: discover
+        run: |
+          releases=$(python3 .github/scripts/update-paper.py discover)
+          branches=$(git ls-remote --heads origin 'refs/heads/paper-support/*' | cut -f2)
+          releases=$(jq -c --arg branches "$branches" '
+            ($branches | split("\n")) as $existing |
+            map(select(("refs/heads/paper-support/" + .version) as $ref | $existing | index($ref) | not))
+          ' <<< "$releases")
+          echo "releases=$releases" >> "$GITHUB_OUTPUT"
+          jq -r 'if length == 0 then "No new stable Paper releases" else "Checking Paper " + (map(.version) | join(", ")) end' <<< "$releases"
+
+  update:
+    name: Check Paper ${{ matrix.release.version }}
+    needs: discover
+    if: needs.discover.outputs.releases != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        release: ${{ fromJSON(needs.discover.outputs.releases) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      MINECRAFT_VERSION: ${{ matrix.release.version }}
+      PAPER_BUNDLE: ${{ matrix.release.bundle }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up JDKs 8, 26 and 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            26
+            21
+
+      - name: Restore Gradle cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.paper/cache
+          key: gradle-modern-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties', 'gradle.properties') }}
+          restore-keys: gradle-modern-
+
+      - name: Prepare version-specific sources
+        run: |
+          python3 .github/scripts/update-paper.py scaffold "$PAPER_BUNDLE"
+          git add -- settings.gradle.kts unify-core/src/main/kotlin/me/jordanfails/unify/nms/ServerVersion.kt "unify-nms/unify-nms-v${MINECRAFT_VERSION//./_}"
+          git diff --cached --binary > "$RUNNER_TEMP/paper-support.patch"
+
+      - name: Build modern jar with the candidate adapter
+        id: build
+        run: >-
+          ./gradlew bundledModern --no-daemon --build-cache
+          -Porg.gradle.java.installations.fromEnv=JAVA_HOME_8_X64,JAVA_HOME_21_X64,JAVA_HOME_26_X64
+          -Porg.gradle.java.installations.auto-download=false
+
+      - name: Upload candidate patch for manual porting
+        if: failure() && steps.build.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper-${{ matrix.release.version }}-candidate
+          path: ${{ runner.temp }}/paper-support.patch
+          if-no-files-found: error
+
+      - name: Push verified source update
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "feat(nms): add Paper $MINECRAFT_VERSION support"
+          gh auth setup-git
+          branch="paper-support/$MINECRAFT_VERSION"
+          git push origin "HEAD:refs/heads/$branch"
+          echo "Paper $MINECRAFT_VERSION source update [$branch]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/tree/$branch)" >> "$GITHUB_STEP_SUMMARY"

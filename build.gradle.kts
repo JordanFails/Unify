@@ -28,28 +28,21 @@ subprojects {
 // Define paths to all jars we want to bundle
 // Legacy JARs (Java 8 compatible: 1.8, 1.9, 1.12, 1.16)
 val legacyCoreJar = file("unify-core/build/libs/Unify-$unifyVersion-legacy.jar")
-val nms_v1_8_R3 = file("unify-nms/unify-nms-v1_8_R3/build/libs/unify-nms-v1_8_R3-$unifyVersion.jar")
-val nms_v1_9_R2 = file("unify-nms/unify-nms-v1_9_R2/build/libs/unify-nms-v1_9_R2-$unifyVersion.jar")
-val nms_v1_12_R1 = file("unify-nms/unify-nms-v1_12_R1/build/libs/unify-nms-v1_12_R1-$unifyVersion.jar")
-val nms_v1_16_R3 = file("unify-nms/unify-nms-v1_16_R3/build/libs/unify-nms-v1_16_R3-$unifyVersion.jar")
+val legacyNmsProjects = listOf("v1_8_R3", "v1_9_R2", "v1_12_R1", "v1_16_R3").map {
+    project(":unify-nms:unify-nms-$it")
+}
 
-// Modern JARs (Paper 1.20.6+: 1.20.6, 1.21.x, 26.x)
+// Modern JARs (Paper 1.20.6+)
 val modernCoreJar = file("unify-core/build/libs/Unify-$unifyVersion-modern.jar")
-val nms_v1_20_R4 = file("unify-nms/unify-nms-v1_20_R4/build/libs/unify-nms-v1_20_R4-$unifyVersion.jar")
-// Must match what the module's `jar` task actually produces. This pointed at a stale
-// `-dev` artifact, so every change to the 1.21 handler was silently left out of the bundle.
-val nms_v1_21_R1 = file("unify-nms/unify-nms-v1_21_R1/build/libs/unify-nms-v1_21_R1-$unifyVersion.jar")
-val nms_v26_R1 = file("unify-nms/unify-nms-v26_R1/build/libs/unify-nms-v26_R1-$unifyVersion.jar")
+val modernNmsProjects = project(":unify-nms").childProjects.values
+    .filter { it !in legacyNmsProjects }.sortedBy { it.path }
 
 // Task to build legacy modules (Java 8)
 tasks.register("buildLegacy") {
     group = "build"
     description = "Build legacy modules (Java 8 - for 1.8 to 1.16 servers)"
     dependsOn(":unify-core:shadowJarLegacy")
-    dependsOn(":unify-nms:unify-nms-v1_8_R3:jar")
-    dependsOn(":unify-nms:unify-nms-v1_9_R2:jar")
-    dependsOn(":unify-nms:unify-nms-v1_12_R1:jar")
-    dependsOn(":unify-nms:unify-nms-v1_16_R3:jar")
+    dependsOn(legacyNmsProjects.map { "${it.path}:jar" })
 }
 
 // Task to build modern modules (Java 17+)
@@ -57,9 +50,7 @@ tasks.register("buildModern") {
     group = "build"
     description = "Build modern modules (Paper 1.20.6+)"
     dependsOn(":unify-core:shadowJarModern")
-    dependsOn(":unify-nms:unify-nms-v1_20_R4:jar")
-    dependsOn(":unify-nms:unify-nms-v1_21_R1:jar")
-    dependsOn(":unify-nms:unify-nms-v26_R1:jar")
+    dependsOn(modernNmsProjects.map { "${it.path}:jar" })
 }
 
 // Missing input jars fail the build (zipTree on a missing file) so a release can't silently lose a handler.
@@ -80,10 +71,9 @@ val bundledLegacyTask = tasks.register<Jar>("bundledLegacy") {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     
     from({ zipTree(legacyCoreJar) })
-    from({ zipTree(nms_v1_8_R3) })
-    from({ zipTree(nms_v1_9_R2) })
-    from({ zipTree(nms_v1_12_R1) })
-    from({ zipTree(nms_v1_16_R3) })
+    legacyNmsProjects.forEach { module ->
+        from({ zipTree(module.layout.buildDirectory.file("libs/${module.name}-$unifyVersion.jar").get()) })
+    }
 }
 
 // Modern bundled plugin (Paper 1.20.6+)
@@ -105,12 +95,10 @@ val bundledModernTask = tasks.register<Jar>("bundledModern") {
     // NMS handlers are Mojang-mapped; without this Paper 1.20.5+ would try to remap them as Spigot-mapped.
     manifest { attributes["paperweight-mappings-namespace"] = "mojang" }
 
-    // No 1.16 handler here: 1.16 servers can't load this jar (api-version 1.18), and leaving it out
-    // means the modern build never needs BuildTools' Spigot jars.
     from({ zipTree(modernCoreJar) })
-    from({ zipTree(nms_v1_20_R4) })
-    from({ zipTree(nms_v1_21_R1) })
-    from({ zipTree(nms_v26_R1) })
+    modernNmsProjects.forEach { module ->
+        from({ zipTree(module.layout.buildDirectory.file("libs/${module.name}-$unifyVersion.jar").get()) })
+    }
 }
 
 // Sources let IDEs show Unify's KDoc and step into its code from a dependent plugin.

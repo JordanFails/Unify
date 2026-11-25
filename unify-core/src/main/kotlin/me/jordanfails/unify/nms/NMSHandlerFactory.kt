@@ -2,7 +2,6 @@ package me.jordanfails.unify.nms
 
 import me.jordanfails.unify.UnifyCore
 
-import me.jordanfails.unify.utils.CC
 import org.bukkit.Bukkit
 
 /**
@@ -12,10 +11,7 @@ object NMSHandlerFactory {
 
     private var nmsHandler: NMSHandler? = null
 
-    /**
-     * Maps Minecraft versions to NMS version strings.
-     * Format: "major.minor" -> "v1_XX_RX"
-     */
+    // Aliases for versions that share an adapter in ServerVersion.
     private val versionMap = mapOf(
         // 1.8.x
         "1.8" to "v1_8_R3",
@@ -72,10 +68,11 @@ object NMSHandlerFactory {
         "1.21.10" to "v1_21_R1",
         "1.21.11" to "v1_21_R1",
 
-        // 26.x (dropped "1." prefix)
+        // Existing aliases for the 26.2 handler
         "26" to "v26_R1",
         "26.1" to "v26_R1",
-        "26.2" to "v26_R1"
+        "26.1.1" to "v26_R1",
+        "26.1.2" to "v26_R1"
     )
 
     /** Get the current NMS handler instance, or try to load it if missing. */
@@ -90,7 +87,7 @@ object NMSHandlerFactory {
 
         val className = "me.jordanfails.unify.nms.$version.NMSHandler_${version}"
         return try {
-        val clazz = Class.forName(className, true, UnifyCore::class.java.classLoader)
+            val clazz = Class.forName(className, true, UnifyCore::class.java.classLoader)
             val instance = clazz.getDeclaredConstructor().newInstance() as NMSHandler
             nmsHandler = instance
             UnifyCore.instance.logger.info("&a&l[Unify] &aLoaded NMS handler for &f&n$version&a.")
@@ -134,12 +131,14 @@ object NMSHandlerFactory {
         }
         
         if (minecraftVersion != null) {
-            // Try exact match first
+            ServerVersion.fromString(minecraftVersion)?.let { return it.name }
             versionMap[minecraftVersion]?.let { return it }
-            
-            // Try major.minor match (e.g., "1.21.5" -> "1.21")
-            val majorMinor = minecraftVersion.split(".").take(2).joinToString(".")
-            versionMap[majorMinor]?.let { return it }
+
+            // Keep the historical 1.x fallback. New Paper versions need an explicit adapter.
+            if (minecraftVersion.startsWith("1.")) {
+                val majorMinor = minecraftVersion.split(".").take(2).joinToString(".")
+                versionMap[majorMinor]?.let { return it }
+            }
         }
         
         Bukkit.getLogger().warning("[Unify] Unknown Minecraft version: $minecraftVersion")
