@@ -355,7 +355,18 @@ class NMSHandler_v1_20_R4 : NMSHandler {
     override fun sendRemoveNametagTeamPacket(viewer: Player, target: Player) {
         sendTeamRemovePacket(viewer, getTeamName(target))
     }
+
+    override fun sendRemoveTeamPacket(viewer: Player, teamName: String) = sendTeamRemovePacket(viewer, teamName.take(16))
     
+    private val ridingNametagLines = RidingNametagLines(::parseText)
+
+    override fun supportsRidingNametagLines() = true
+
+    override fun showNametagLines(viewer: Player, target: Player, lines: List<String>) =
+        ridingNametagLines.show(viewer, target, lines)
+
+    override fun hideNametagLines(viewer: Player, target: UUID) = ridingNametagLines.hide(viewer, target)
+
     override fun sendNametagPacket(viewer: Player, target: Player, teamName: String, prefix: String, suffix: String) {
         sendTeamPacket(viewer, target, teamName.take(16), prefix, suffix, Team.Visibility.ALWAYS)
     }

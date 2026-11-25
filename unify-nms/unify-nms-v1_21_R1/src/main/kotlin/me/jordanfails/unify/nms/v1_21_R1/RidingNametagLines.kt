@@ -45,7 +45,7 @@ internal class RidingNametagLines(private val parseText: (String) -> Component) 
         val vehicle = (target as CraftPlayer).handle
         // Without the player on the viewer's client there is nothing to ride, and the lines
         // would hang wherever they were spawned.
-        if (vehicle.`moonrise$getTrackedEntity`().seenBy?.contains(connection) != true) {
+        if (vehicle.`moonrise$getTrackedEntity`()?.seenBy?.contains(connection) != true) {
             return hide(viewer, target.uniqueId)
         }
 
@@ -82,8 +82,8 @@ internal class RidingNametagLines(private val parseText: (String) -> Component) 
         val interactions = lines.map {
             Interaction(EntityType.INTERACTION, vehicle.level()).apply {
                 setPos(vehicle.x, vehicle.y, vehicle.z)
-                setWidth(0f)
-                setHeight(LINE_HEIGHT)
+                width = 0f
+                height = LINE_HEIGHT
             }
         }
         for (entity in interactions + stands) {

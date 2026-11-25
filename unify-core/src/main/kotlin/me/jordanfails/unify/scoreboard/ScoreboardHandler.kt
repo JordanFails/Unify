@@ -1,12 +1,14 @@
 package me.jordanfails.unify.scoreboard
 
 import com.google.common.primitives.Ints
+import me.jordanfails.unify.module.UnifyModule
 import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.config.UnifyConfig
 import me.jordanfails.unify.npc.NPCRegistry
-import me.jordanfails.unify.scoreboard.thread.ScoreboardThread
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
+import org.bukkit.plugin.Plugin
+import me.jordanfails.unify.plugin.ProviderRegistry
 import org.bukkit.scheduler.BukkitTask
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
@@ -14,39 +16,53 @@ import java.util.concurrent.ConcurrentHashMap
 object ScoreboardHandler {
 
     private val playerBoards = ConcurrentHashMap<UUID, ScoreboardInfo>()
-    private val providers = ArrayList<ScoreboardProvider>()
+    private val providers = ProviderRegistry<ScoreboardProvider> { it.weight }
     
+    @Volatile
     private var enabled: Boolean = false
-    private var async: Boolean = true
-    private var threadStarted: Boolean = false
     private var refreshTask: BukkitTask? = null
+
+    // Bumped on every restart; a display queued before it is dropped instead of reappearing after cleanup.
+    @Volatile
+    private var generation = 0
+
 
     var updateInterval: Int = 20
 
-    fun initialLoad() {
+    internal fun initialLoad() {
         reloadAll()
     }
 
     fun reloadAll() {
-        enabled = UnifyConfig.Scoreboard.enabled.get()
         updateInterval = UnifyConfig.Scoreboard.updateInterval.get().coerceAtLeast(1)
+        restart()
+    }
 
+    fun registerProvider(newProvider: ScoreboardProvider) {
+        if (!UnifyModule.SCOREBOARD.allowsRegistration(newProvider)) return
+        providers.add(newProvider)
+        restart()
+    }
+
+    internal fun forgetPlugin(plugin: Plugin) {
+        if (providers.removeOwnedBy(plugin)) restart()
+    }
+
+    // Unify ships no scoreboard of its own, so this only runs while some plugin provides one.
+    private fun restart() {
+        generation++
         refreshTask?.cancel()
         refreshTask = null
-        providers.clear()
+        enabled = UnifyModule.SCOREBOARD.isEnabled && !providers.isEmpty()
 
         if (!enabled) {
-            UnifyCore.instance.logger.info("Auto-updating scoreboards are disabled by config")
+            playerBoards.keys.mapNotNull(Bukkit::getPlayer).forEach(ScoreboardPacket::removePacketSidebar)
             playerBoards.clear()
             return
         }
 
-        if (!threadStarted) {
-            ScoreboardThread().start()
-            threadStarted = true
-        }
 
-        refreshTask = Bukkit.getScheduler().runTaskTimerAsynchronously(UnifyCore.instance, Runnable {
+        refreshTask = Bukkit.getScheduler().runTaskTimer(UnifyCore.instance, Runnable {
             for (player in NPCRegistry.realOnlinePlayers()) {
                 reloadPlayer(player)
             }
@@ -55,32 +71,12 @@ object ScoreboardHandler {
         NPCRegistry.realOnlinePlayers().forEach { reloadPlayer(it) }
     }
 
-    fun registerProvider(newProvider: ScoreboardProvider) {
-        providers.add(newProvider)
-        providers.sortWith { a, b -> Ints.compare(b.weight, a.weight) }
-    }
-
     fun reloadPlayer(player: Player) {
-        if (NPCRegistry.isNpc(player)) return
-        val update = ScoreboardUpdate(player)
-
-        if (async) {
-            ScoreboardThread.pendingUpdates[update] = true
-        } else {
-            applyUpdate(update)
-        }
-    }
-
-    internal fun applyUpdate(scoreboardUpdate: ScoreboardUpdate) {
-        val player = Bukkit.getPlayerExact(scoreboardUpdate.player.name) ?: return
+        if (!enabled || !player.isOnline) return
         if (NPCRegistry.isNpc(player)) return
 
-        var provided: ScoreboardInfo? = null
-        var providerIndex = 0
-
-        while (provided == null && providerIndex < providers.size) {
-            provided = providers[providerIndex++].fetchScoreboard(player)
-        }
+        val queuedIn = generation
+        val provided = providers.firstOf { it.fetchScoreboard(player) }
 
         if (provided == null) {
             val hadBoard = playerBoards.remove(player.uniqueId)
@@ -101,11 +97,20 @@ object ScoreboardHandler {
         playerBoards[player.uniqueId] = provided
 
         Bukkit.getScheduler().runTask(UnifyCore.instance, Runnable {
-            if (!player.isOnline) return@Runnable
+            if (!player.isOnline || queuedIn != generation) return@Runnable
 
             val packet = ScoreboardPacket.createFromInfo(provided)
             packet.send(player)
         })
+    }
+
+    internal fun disable() {
+        generation++
+        playerBoards.keys.mapNotNull(Bukkit::getPlayer).forEach(ScoreboardPacket::removePacketSidebar)
+        playerBoards.clear()
+        refreshTask?.cancel()
+        refreshTask = null
+        enabled = false
     }
 
     fun initiatePlayer(player: Player) {
@@ -126,6 +131,6 @@ object ScoreboardHandler {
     }
 
     fun providers(): List<ScoreboardProvider> {
-        return providers
+        return providers.sorted.toList()
     }
 }

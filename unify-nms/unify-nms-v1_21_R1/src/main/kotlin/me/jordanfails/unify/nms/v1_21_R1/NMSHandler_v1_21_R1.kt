@@ -42,8 +42,6 @@ import net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket
 import net.minecraft.server.MinecraftServer
 import net.minecraft.server.level.ClientInformation
 import net.minecraft.server.level.ServerPlayer
-import net.minecraft.world.entity.player.ChatVisiblity
-import net.minecraft.world.entity.player.Player as NmsPlayer
 import net.minecraft.server.network.CommonListenerCookie
 import net.minecraft.server.network.ServerGamePacketListenerImpl
 import net.minecraft.world.entity.Entity
@@ -386,7 +384,7 @@ class NMSHandler_v1_21_R1 : NMSHandler {
                 )
             }
 
-            val npc = ServerPlayer(server, world, profile, npcClientInformation())
+            val npc = ServerPlayer(server, world, profile, npcClientInformation)
             positionServerPlayer(npc, spec.location)
             attachFakeConnection(server, npc, profile)
             npc.noPhysics = true
@@ -525,16 +523,17 @@ class NMSHandler_v1_21_R1 : NMSHandler {
      * someone's skin shows their hat and jacket instead of just the base layer. Mirrors the
      * default for every other field.
      */
-    private fun npcClientInformation(): ClientInformation = ClientInformation(
-        "en_us",
-        2,
-        ChatVisiblity.FULL,
-        true,
-        ALL_SKIN_LAYERS,
-        NmsPlayer.DEFAULT_MAIN_HAND,
-        false,
-        false,
-    )
+    // This handler also serves 1.21.2+, where the constructor gained a ParticleStatus argument (and
+    // 1.21.9 moved the default main hand), so copy createDefault() component by component instead.
+    private val npcClientInformation: ClientInformation by lazy {
+        val default = ClientInformation.createDefault()
+        runCatching {
+            val components = ClientInformation::class.java.recordComponents
+            val args = components.map { if (it.name == "modelCustomisation") ALL_SKIN_LAYERS else it.accessor.invoke(default) }
+            ClientInformation::class.java.getDeclaredConstructor(*components.map { it.type }.toTypedArray())
+                .newInstance(*args.toTypedArray())
+        }.getOrDefault(default)
+    }
 
     private fun refreshNpcForViewer(viewer: Player, npc: ServerPlayer) {
         try {
@@ -877,7 +876,18 @@ class NMSHandler_v1_21_R1 : NMSHandler {
     override fun sendRemoveNametagTeamPacket(viewer: Player, target: Player) {
         sendTeamRemovePacket(viewer, getTeamName(target))
     }
+
+    override fun sendRemoveTeamPacket(viewer: Player, teamName: String) = sendTeamRemovePacket(viewer, teamName.take(16))
     
+    private val ridingNametagLines = RidingNametagLines(::parseText)
+
+    override fun supportsRidingNametagLines() = true
+
+    override fun showNametagLines(viewer: Player, target: Player, lines: List<String>) =
+        ridingNametagLines.show(viewer, target, lines)
+
+    override fun hideNametagLines(viewer: Player, target: UUID) = ridingNametagLines.hide(viewer, target)
+
     override fun sendNametagPacket(viewer: Player, target: Player, teamName: String, prefix: String, suffix: String) {
         sendTeamPacket(viewer, target, teamName.take(16), prefix, suffix, Team.Visibility.ALWAYS)
     }
@@ -1191,6 +1201,19 @@ class NMSHandler_v1_21_R1 : NMSHandler {
             entity.yHeadRot.toDouble()
         )
 
+    // This handler also serves 1.21.2+, where ClientboundTeleportEntityPacket(Entity) was replaced by
+    // ClientboundEntityPositionSyncPacket.of(Entity). Pick whichever this server has, once.
+    private val teleportPacket: (Entity) -> Packet<*> = run {
+        val legacy = runCatching { ClientboundTeleportEntityPacket::class.java.getConstructor(Entity::class.java) }.getOrNull()
+        if (legacy != null) {
+            { entity -> legacy.newInstance(entity) as Packet<*> }
+        } else {
+            val sync = Class.forName("net.minecraft.network.protocol.game.ClientboundEntityPositionSyncPacket")
+                .getMethod("of", Entity::class.java)
+            ({ entity -> sync.invoke(null, entity) as Packet<*> })
+        }
+    }
+
     /**
      * Re-sends the entity metadata for each line, leaving the entities themselves alive. The
      * text changes in place with no despawn/respawn blink.
@@ -1216,7 +1239,7 @@ class NMSHandler_v1_21_R1 : NMSHandler {
                         armorStand.entityData.packAll()?.let {
                             connection.send(ClientboundSetEntityDataPacket(entityId, it))
                         }
-                        if (moved) connection.send(ClientboundTeleportEntityPacket(armorStand))
+                        if (moved) connection.send(teleportPacket(armorStand))
                         currentY -= TEXT_LINE_SPACING
                     }
                     is HologramLine.Item -> {
@@ -1228,7 +1251,7 @@ class NMSHandler_v1_21_R1 : NMSHandler {
                         itemEntity.entityData.packAll()?.let {
                             connection.send(ClientboundSetEntityDataPacket(entityId, it))
                         }
-                        if (moved) connection.send(ClientboundTeleportEntityPacket(itemEntity))
+                        if (moved) connection.send(teleportPacket(itemEntity))
                         currentY -= ITEM_LINE_SPACING
                     }
                 }

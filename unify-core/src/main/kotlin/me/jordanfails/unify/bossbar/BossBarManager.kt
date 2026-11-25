@@ -6,6 +6,7 @@ import me.jordanfails.unify.npc.NPCRegistry
 import org.bukkit.Bukkit
 import org.bukkit.World
 import org.bukkit.entity.Player
+import org.bukkit.plugin.Plugin
 import org.bukkit.plugin.java.JavaPlugin
 import org.bukkit.scheduler.BukkitTask
 import java.util.concurrent.ConcurrentHashMap
@@ -27,13 +28,13 @@ object BossBarManager {
     var tickInterval: Int = 4
         private set
 
-    fun enable(plugin: JavaPlugin) {
+    internal fun enable(plugin: JavaPlugin) {
         tickInterval = UnifyConfig.BossBar.tickInterval.get().coerceAtLeast(1)
         tickTask?.cancel()
         tickTask = Bukkit.getScheduler().runTaskTimer(plugin, Runnable { tick() }, 20L, tickInterval.toLong())
     }
 
-    fun disable() {
+    internal fun disable() {
         tickTask?.cancel()
         tickTask = null
         for (bar in named.values.toList()) {
@@ -45,6 +46,11 @@ object BossBarManager {
             bar.removeAll()
             UnifyBossBar.drop(bar)
         }
+    }
+
+    /** Removes every bar [plugin] created, named or not, so they don't stay on screen after it disables. */
+    internal fun forgetPlugin(plugin: Plugin) {
+        for (bar in UnifyBossBar.allLive().filter { it.owner === plugin }) delete(bar)
     }
 
     /** Creates (or replaces) a bar registered under [name]. */

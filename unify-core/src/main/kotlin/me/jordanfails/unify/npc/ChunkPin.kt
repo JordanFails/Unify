@@ -26,8 +26,12 @@ import java.util.concurrent.ConcurrentHashMap
  */
 object ChunkPin : Listener {
 
-    /** Chunk keys we are responsible for keeping loaded, as `world|x|z`. */
-    private val pinned = ConcurrentHashMap.newKeySet<String>()
+    /**
+     * Which NPCs hold each chunk (`world|x|z`). Bukkit gives a plugin one ticket per chunk, not one
+     * per NPC, so the ticket is only taken for the first holder and released after the last.
+     */
+    private val holders = ConcurrentHashMap<String, MutableSet<String>>()
+    private val chunkOf = ConcurrentHashMap<String, String>()
 
     private var legacyListenerRegistered = false
 
@@ -45,16 +49,24 @@ object ChunkPin : Listener {
 
     private fun key(world: World, x: Int, z: Int) = "${world.name}|$x|$z"
 
-    /** Loads the chunk containing [location] and holds it loaded until [unpin]. */
-    fun pin(location: Location) {
+    /**
+     * Holds the chunk containing [location] loaded on behalf of NPC [owner], moving the hold if that
+     * NPC held a different chunk. Pinning the same chunk again is a no-op.
+     */
+    fun pin(owner: String, location: Location) {
         val world = location.world ?: return
         val x = location.blockX shr 4
         val z = location.blockZ shr 4
+        val key = key(world, x, z)
+        if (chunkOf[owner] == key) return
+        unpin(owner)
 
         if (!world.isChunkLoaded(x, z)) {
             world.loadChunk(x, z, true)
         }
-        pinned.add(key(world, x, z))
+        chunkOf[owner] = key
+        val first = holders.getOrPut(key) { ConcurrentHashMap.newKeySet() }.let { it.add(owner); it.size == 1 }
+        if (!first) return
 
         // Bound to locals so Kotlin can smart-cast them; object properties are not stable for that.
         val ticket = addPluginChunkTicket
@@ -67,19 +79,21 @@ object ChunkPin : Listener {
         }
     }
 
-    /**
-     * Releases the chunk containing [location].
-     *
-     * Safe to call for a location that was never pinned; safe to call twice. Note that with the
-     * plugin-ticket API this is refcounted by Bukkit, so two NPCs sharing a chunk each hold their
-     * own ticket and the chunk only frees when both release — which is why [pinned] is not itself
-     * used to gate the release call.
-     */
-    fun unpin(location: Location) {
-        val world = location.world ?: return
-        val x = location.blockX shr 4
-        val z = location.blockZ shr 4
-        pinned.remove(key(world, x, z))
+    /** Drops [owner]'s hold. Safe to call when it holds nothing, or twice. */
+    fun unpin(owner: String) {
+        val key = chunkOf.remove(owner) ?: return
+        val remaining = holders[key] ?: return
+        remaining.remove(owner)
+        if (remaining.isNotEmpty()) return
+        holders.remove(key)
+        release(key)
+    }
+
+    private fun release(key: String) {
+        val parts = key.split('|')
+        val world = org.bukkit.Bukkit.getWorld(parts[0]) ?: return
+        val x = parts[1].toInt()
+        val z = parts[2].toInt()
 
         val ticket = removePluginChunkTicket
         val force = setForceLoaded
@@ -95,15 +109,9 @@ object ChunkPin : Listener {
 
     /** Releases every pin. Called on plugin disable so no chunk stays forced past our lifetime. */
     fun releaseAll() {
-        pinned.toList().forEach { entry ->
-            val parts = entry.split('|')
-            if (parts.size != 3) return@forEach
-            val world = org.bukkit.Bukkit.getWorld(parts[0]) ?: return@forEach
-            val x = parts[1].toIntOrNull() ?: return@forEach
-            val z = parts[2].toIntOrNull() ?: return@forEach
-            unpin(Location(world, (x shl 4).toDouble(), 64.0, (z shl 4).toDouble()))
-        }
-        pinned.clear()
+        holders.keys.toList().forEach(::release)
+        holders.clear()
+        chunkOf.clear()
     }
 
     private fun registerLegacyListener() {
@@ -119,7 +127,7 @@ object ChunkPin : Listener {
     @EventHandler(priority = EventPriority.HIGHEST)
     fun onChunkUnload(event: ChunkUnloadEvent) {
         val chunk = event.chunk
-        if (!pinned.contains(key(chunk.world, chunk.x, chunk.z))) return
+        if (!holders.containsKey(key(chunk.world, chunk.x, chunk.z))) return
         runCatching {
             event.javaClass.getMethod("setCancelled", Boolean::class.javaPrimitiveType).invoke(event, true)
         }

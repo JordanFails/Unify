@@ -97,10 +97,16 @@ object NMSHandlerFactory {
             Bukkit.getLogger().info("&a&l[Unify] &aLoaded NMS handler for &f&n$version&a.")
             instance
         } catch (ex: Exception) {
-            Bukkit.getLogger().warning("&c&l[Unify] &cNo NMS handler found for version &f&n$version&c!")
-            Bukkit.getLogger().warning("&c&l[Unify] Error: ${ex.message}")
-            null
+            reportMissing(version, ex)
+        } catch (ex: LinkageError) {
+            // A handler built against a different server build fails to link; report it, don't abort enable.
+            reportMissing(version, ex)
         }
+    }
+
+    private fun reportMissing(version: String, error: Throwable): NMSHandler? {
+        Bukkit.getLogger().warning("[Unify] No NMS handler for $version in this jar: ${error.message}")
+        return null
     }
 
     /**

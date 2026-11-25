@@ -82,8 +82,8 @@ internal class RidingNametagLines(private val parseText: (String) -> Component) 
         val interactions = lines.map {
             Interaction(EntityType.INTERACTION, vehicle.level()).apply {
                 setPos(vehicle.x, vehicle.y, vehicle.z)
-                setWidth(0f)
-                setHeight(LINE_HEIGHT)
+                width = 0f
+                height = LINE_HEIGHT
             }
         }
         for (entity in interactions + stands) {

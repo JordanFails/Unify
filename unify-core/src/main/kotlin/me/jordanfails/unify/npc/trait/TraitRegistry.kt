@@ -1,5 +1,7 @@
 package me.jordanfails.unify.npc.trait
 
+import me.jordanfails.unify.module.UnifyModule
+import me.jordanfails.unify.npc.NPCRegistry
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -25,9 +27,11 @@ object TraitRegistry {
      * a downstream plugin override a built-in trait without us needing an unregister dance.
      */
     fun <T : Trait> register(name: String, type: Class<T>, factory: () -> T) {
+        if (!UnifyModule.NPCS.allowsRegistration(factory)) return
         val entry = Entry(name, type, factory)
         byName[name.lowercase()] = entry
         byType[type] = entry
+        NPCRegistry.adoptPendingTraits(name)
     }
 
     /** Creates a fresh instance of the trait registered under [name], or null if none is. */

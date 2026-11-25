@@ -85,6 +85,10 @@ class NPCCommand : BaseCommand() {
             player.sendMessage(CC.translate("&cAn NPC with ID '&e$id&c' already exists."))
             return
         }
+        if ('.' in id) {
+            player.sendMessage(CC.translate("&cNPC IDs can't contain '.'."))
+            return
+        }
 
         val entityType = resolveEntityType(player, entityTypeName) ?: return
 
@@ -367,7 +371,9 @@ class NPCCommand : BaseCommand() {
         player.sendMessage(CC.translate("&aAdded click command &f/${command.removePrefix("/")}&a."))
     }
 
+    // Console commands run with full server authority, so they need more than the NPC editing permission.
     @Subcommand("cmd console|command console")
+    @CommandPermission("unify.npc.console")
     @Syntax("<command>")
     @Description("Add a command run as console when the NPC is clicked")
     fun onCommandAddConsole(player: Player, command: String) {

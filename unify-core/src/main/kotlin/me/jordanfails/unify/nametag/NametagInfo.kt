@@ -7,13 +7,18 @@ class NametagInfo constructor(
     val sortWeight: Int = 0,
 ) {
 
-    val teamAddPacket = ScoreboardTeamPacketMod(name, prefix, suffix, ArrayList(), 0)
+    /** Extra lines above the normal name, ordered from top to bottom. */
+    var lines: List<String> = emptyList()
+        set(value) {
+            field = value.toList()
+        }
 
     override fun equals(other: Any?): Boolean {
         return other is NametagInfo && (this.name == other.name
                 && this.prefix == other.prefix
                 && this.suffix == other.suffix
-                && this.sortWeight == other.sortWeight)
+                && this.sortWeight == other.sortWeight
+                && this.lines == other.lines)
     }
 
     override fun hashCode(): Int {
@@ -21,6 +26,7 @@ class NametagInfo constructor(
         result = 31 * result + prefix.hashCode()
         result = 31 * result + suffix.hashCode()
         result = 31 * result + sortWeight
+        result = 31 * result + lines.hashCode()
         return result
     }
 

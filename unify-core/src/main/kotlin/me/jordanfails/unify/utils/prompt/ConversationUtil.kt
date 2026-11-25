@@ -1,6 +1,7 @@
 package me.jordanfails.unify.utils.prompt
 
 import me.jordanfails.unify.UnifyCore
+import org.bukkit.conversations.Conversation
 import org.bukkit.conversations.ConversationFactory
 import org.bukkit.conversations.Prompt
 import org.bukkit.entity.Player
@@ -9,7 +10,7 @@ import org.bukkit.plugin.java.JavaPlugin
 object ConversationUtil {
 
     @JvmStatic
-    fun startConversation(player: Player, prompt: Prompt, plugin: JavaPlugin = UnifyCore.instance) {
+    fun startConversation(player: Player, prompt: Prompt, plugin: JavaPlugin = UnifyCore.instance): Conversation {
         if (player.openInventory != null) {
             player.closeInventory()
         }
@@ -20,7 +21,7 @@ object ConversationUtil {
             .withLocalEcho(false)
             .thatExcludesNonPlayersWithMessage("Go away evil console!")
 
-        player.beginConversation(factory.buildConversation(player))
+        return factory.buildConversation(player).also { player.beginConversation(it) }
     }
 
 }

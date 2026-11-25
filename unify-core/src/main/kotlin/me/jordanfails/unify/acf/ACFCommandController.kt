@@ -7,6 +7,8 @@ import me.jordanfails.unify.hologram.HologramManager
 import me.jordanfails.unify.hologram.UnifyHologram
 import me.jordanfails.unify.nms.NMSHandlerFactory
 import me.jordanfails.unify.npc.NPCRegistry
+import me.jordanfails.unify.plugin.UnifyPlugins
+import co.aikar.commands.PaperCommandManager
 import org.bukkit.entity.EntityType
 
 object ACFCommandController {
@@ -14,12 +16,18 @@ object ACFCommandController {
     val commandHandler: CommandHandler = CommandHandler(acf)
 
     fun registerAll() {
-        commandHandler.registerResolvers(
+        setup(acf)
+        acf.commandCompletions.registerCompletion("unifyPlugins") { UnifyPlugins.all.map { it.plugin.name } }
+    }
+
+    /** Adds Unify's argument types and completions to a command manager, including other plugins' own managers. */
+    fun setup(manager: PaperCommandManager) {
+        CommandHandler(manager).registerResolvers(
             HologramContextResolver(),
             NPCContextResolver()
         )
-        registerCompletions()
-        acf.enableUnstableAPI("help")
+        registerCompletions(manager)
+        manager.enableUnstableAPI("help")
     }
 
     /**
@@ -29,8 +37,8 @@ object ACFCommandController {
      * completions never offer a type that would be rejected — the set differs a lot between 1.8
      * and current.
      */
-    private fun registerCompletions() {
-        acf.commandCompletions.registerCompletion("entityTypes") {
+    private fun registerCompletions(manager: PaperCommandManager) {
+        manager.commandCompletions.registerCompletion("entityTypes") {
             val handler = NMSHandlerFactory.getHandler()
             EntityType.values()
                 .filter { it.isSpawnable && (handler == null || handler.supportsNpcEntityType(it)) }

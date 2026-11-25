@@ -36,7 +36,7 @@ internal object HologramViews : Listener {
         return live.values.mapNotNull { it.get() }
     }
 
-    fun enable(plugin: UnifyCore) {
+    internal fun enable(plugin: UnifyCore) {
         plugin.server.pluginManager.registerEvents(this, plugin)
         var tick = 0L
         task = plugin.server.scheduler.runTaskTimer(plugin, Runnable {
@@ -52,7 +52,7 @@ internal object HologramViews : Listener {
         }, 1L, 1L)
     }
 
-    fun disable() {
+    internal fun disable() {
         task?.cancel()
         task = null
         all().forEach { it.close() }

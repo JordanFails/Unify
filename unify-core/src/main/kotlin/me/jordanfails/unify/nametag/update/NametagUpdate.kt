@@ -1,10 +1,6 @@
 package me.jordanfails.unify.nametag.update
 
-import org.bukkit.entity.Player
+import java.util.UUID
 
-internal class NametagUpdate(var toRefresh: String, var refreshFor: String?) {
-
-    constructor(toRefresh: Player): this(toRefresh.name, null)
-    constructor(toRefresh: Player, refreshFor: Player): this(toRefresh.name, refreshFor.name)
-
-}
+/** Refresh [target]'s plate for one [viewer], or for every viewer when it's null. */
+internal data class NametagUpdate(val target: UUID, val viewer: UUID?)

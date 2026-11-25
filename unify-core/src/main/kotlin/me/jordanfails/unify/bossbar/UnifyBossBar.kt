@@ -1,5 +1,8 @@
 package me.jordanfails.unify.bossbar
 
+import me.jordanfails.unify.module.UnifyModule
+import me.jordanfails.unify.plugin.callingPlugin
+import org.bukkit.plugin.Plugin
 import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.config.UnifyConfig
 import me.jordanfails.unify.npc.NPCRegistry
@@ -31,6 +34,13 @@ class UnifyBossBar @JvmOverloads constructor(
 ) {
 
     val uuid: UUID = UUID.randomUUID()
+
+    /** The plugin that created this bar (found from the call stack); its bars are removed when it disables. */
+    internal val owner: Plugin? = callingPlugin()
+
+    init {
+        UnifyModule.BOSSBAR.require()
+    }
 
     /**
      * Title template. Supports `{player}`, `{world}`, `{time}`, `{online}`, `{max_players}`.

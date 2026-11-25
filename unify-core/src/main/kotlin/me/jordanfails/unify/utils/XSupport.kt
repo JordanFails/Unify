@@ -11,13 +11,6 @@ import org.bukkit.inventory.ItemStack
  * Works for modern and legacy versions.
  */
 object XSupport {
-    private val soundFallbacks = mapOf(
-        XSound.UI_BUTTON_CLICK to Sound.UI_BUTTON_CLICK,
-        XSound.BLOCK_NOTE_BLOCK_PLING to Sound.BLOCK_NOTE_BLOCK_PLING,
-        XSound.BLOCK_GRASS_HIT to Sound.BLOCK_GRASS_HIT,
-        XSound.BLOCK_ANVIL_HIT to Sound.BLOCK_ANVIL_HIT,
-        XSound.BLOCK_NOTE_BLOCK_BASEDRUM to Sound.BLOCK_NOTE_BLOCK_BASEDRUM,
-    )
 
     fun resolve(xMaterial: XMaterial, amount: Int = 1): ItemStack {
         val parsed = xMaterial.parseItem()
@@ -27,11 +20,15 @@ object XSupport {
         return ItemStack(resolve(xMaterial), amount)
     }
 
-    fun resolveSound(xSound: XSound): Sound {
-        xSound.parseSound()?.let { return it }
-        soundFallbacks[xSound]?.let { return it }
-        return runCatching { Sound.valueOf(xSound.get()!!.name) }.getOrNull() ?: Sound.UI_BUTTON_CLICK
-    }
+    // Sounds are looked up by name, never as Sound.X fields: a field missing on the running server
+    // (most modern names on 1.8-1.12) fails to link and would break every class that touches this one.
+    fun resolveSound(xSound: XSound): Sound =
+        xSound.parseSound()
+            ?: soundNamed(xSound.name())
+            ?: soundNamed("UI_BUTTON_CLICK")
+            ?: soundNamed("CLICK")!! // the 1.8 name
+
+    private fun soundNamed(name: String): Sound? = runCatching { Sound.valueOf(name) }.getOrNull()
 
     fun resolve(xMaterial: XMaterial): Material {
         xMaterial.parseMaterial()?.let { return it }

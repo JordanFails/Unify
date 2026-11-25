@@ -47,7 +47,14 @@ object ButtonListeners : Listener {
             val placed = if (slot < topSize && menu is InteractiveMenu) menu.getSlotItem(slot) else item.clone()
             event.view.setItem(slot, placed)
         }
-        event.view.setCursor(event.cursor)
+        // A cancelled drag makes the server restore the original cursor after this handler, which would
+        // leave the placed items AND the full cursor (a dupe). Apply the leftover cursor next tick instead;
+        // scheduled tasks run before the player's next click is processed.
+        val leftover = event.cursor?.clone()
+        val view = event.view
+        Bukkit.getScheduler().runTask(UnifyCore.instance, Runnable {
+            if (player.openInventory.topInventory === view.topInventory) view.setCursor(leftover)
+        })
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)

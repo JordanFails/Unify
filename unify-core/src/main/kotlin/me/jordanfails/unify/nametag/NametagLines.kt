@@ -1,8 +1,7 @@
 package me.jordanfails.unify.nametag
 
+import java.util.logging.Level
 import me.jordanfails.unify.UnifyCore
-import me.jordanfails.unify.hologram.HologramLine
-import me.jordanfails.unify.hologram.UnifyHologram
 import org.bukkit.Bukkit
 import org.bukkit.GameMode
 import org.bukkit.entity.Player
@@ -11,30 +10,41 @@ import org.bukkit.scheduler.BukkitTask
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-/** Provider results arrive asynchronously; holograms and player tracking stay on the main thread. */
+/**
+ * Extra lines ride the player on the viewer's client (1.20.5+), so they never lag behind.
+ * Older versions can't do that and get no extra lines at all.
+ *
+ * Provider results arrive asynchronously; everything else stays on the main thread.
+ */
 internal object NametagLines {
     private data class View(val target: UUID, val viewer: UUID)
 
     private val pending = ConcurrentHashMap<View, List<String>>()
-    private val holograms = mutableMapOf<View, UnifyHologram>()
+    private val wanted = mutableMapOf<View, List<String>>()
     private var task: BukkitTask? = null
 
     fun enable() {
-        task = Bukkit.getScheduler().runTaskTimer(UnifyCore.instance, Runnable { tick() }, 1L, 2L)
+        if (UnifyCore.instance.nms?.supportsRidingNametagLines() != true) {
+            if (UnifyCore.instance.config.getStringList("nametags.lines").isNotEmpty()) {
+                UnifyCore.instance.logger.info("Multi-line nametags need 1.20.5+; nametags.lines is ignored on this version")
+            }
+            return
+        }
+        task = Bukkit.getScheduler().runTaskTimer(UnifyCore.instance, Runnable { tick() }, 1L, 1L)
     }
 
     fun update(target: Player, viewer: Player, lines: List<String>) {
-        if (target.uniqueId == viewer.uniqueId) return
+        if (task == null || target.uniqueId == viewer.uniqueId) return
         pending[View(target.uniqueId, viewer.uniqueId)] = lines.toList()
     }
 
     fun removePlayer(player: Player) {
         pending.keys.removeAll { it.target == player.uniqueId || it.viewer == player.uniqueId }
-        val iterator = holograms.iterator()
+        val iterator = wanted.keys.iterator()
         while (iterator.hasNext()) {
-            val (view, hologram) = iterator.next()
+            val view = iterator.next()
             if (view.target == player.uniqueId || view.viewer == player.uniqueId) {
-                hologram.close()
+                hide(view)
                 iterator.remove()
             }
         }
@@ -44,51 +54,47 @@ internal object NametagLines {
         task?.cancel()
         task = null
         pending.clear()
-        holograms.values.forEach { it.close() }
-        holograms.clear()
+        wanted.keys.forEach { hide(it) }
+        wanted.clear()
     }
 
     private fun tick() {
         for ((view, lines) in pending.entries.toList()) {
             if (!pending.remove(view, lines)) continue
             if (lines.isEmpty()) {
-                holograms.remove(view)?.close()
-                continue
+                if (wanted.remove(view) != null) hide(view)
+            } else {
+                wanted[view] = lines
             }
-            val target = Bukkit.getPlayer(view.target) ?: continue
-            val viewer = Bukkit.getPlayer(view.viewer) ?: continue
-            val hologram = holograms.getOrPut(view) { UnifyHologram(target.location) }
-            // Viewer membership is reconciled below before anything is spawned.
-            if (!canSee(target, viewer)) hologram.removeViewer(viewer)
-            hologram.lines = lines.map { HologramLine.Text(it) }
         }
 
-        val iterator = holograms.iterator()
+        val nms = UnifyCore.instance.nms ?: return
+        val iterator = wanted.entries.iterator()
         while (iterator.hasNext()) {
-            val (view, hologram) = iterator.next()
+            val (view, lines) = iterator.next()
             val target = Bukkit.getPlayer(view.target)
             val viewer = Bukkit.getPlayer(view.viewer)
             if (target == null || viewer == null || !NametagHandler.isEnabled()) {
-                hologram.close()
+                hide(view)
                 iterator.remove()
                 continue
             }
-            if (!canSee(target, viewer)) {
-                hologram.removeViewer(viewer)
-                continue
+            try {
+                if (canSee(target, viewer)) nms.showNametagLines(viewer, target, lines) else hide(view)
+            } catch (error: Exception) {
+                // One bad pair (e.g. a player mid tracking change) shouldn't stop everyone else's lines.
+                UnifyCore.instance.logger.log(Level.FINE, "Nametag lines failed for ${viewer.name} -> ${target.name}", error)
             }
-            val height = target.eyeHeight + 0.1 + (hologram.lines.size - 1) * 0.25
-            val location = target.location.add(0.0, height, 0.0)
-            location.yaw = 0f
-            location.pitch = 0f
-            hologram.teleport(location)
-            if (!hologram.hasViewer(viewer)) hologram.addViewer(viewer)
         }
     }
 
+    private fun hide(view: View) {
+        val viewer = Bukkit.getPlayer(view.viewer) ?: return
+        UnifyCore.instance.nms?.hideNametagLines(viewer, view.target)
+    }
+
     private fun canSee(target: Player, viewer: Player): Boolean =
-        target.isOnline && viewer.isOnline && !target.isDead && !target.isSneaking &&
+        target.isOnline && viewer.isOnline && !target.isDead &&
             target.gameMode != GameMode.SPECTATOR && !target.hasPotionEffect(PotionEffectType.INVISIBILITY) &&
-            target.world == viewer.world && viewer.canSee(target) && !NametagHandler.isHidden(target) &&
-            target.location.distanceSquared(viewer.location) <= 64.0 * 64.0
+            target.world == viewer.world && viewer.canSee(target) && !NametagHandler.isHidden(target)
 }

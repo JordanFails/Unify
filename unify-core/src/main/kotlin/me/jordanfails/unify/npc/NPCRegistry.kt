@@ -1,5 +1,6 @@
 package me.jordanfails.unify.npc
 
+import me.jordanfails.unify.module.UnifyModule
 import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.npc.event.NPCDespawnEvent
 import me.jordanfails.unify.npc.trait.ProtectedTrait
@@ -7,6 +8,9 @@ import me.jordanfails.unify.npc.trait.Trait
 import me.jordanfails.unify.npc.trait.TraitRegistry
 import org.bukkit.Bukkit
 import org.bukkit.Location
+import me.jordanfails.unify.plugin.owningPlugin
+import org.bukkit.plugin.Plugin
+import org.bukkit.configuration.ConfigurationSection
 import org.bukkit.configuration.file.YamlConfiguration
 import org.bukkit.entity.Entity
 import org.bukkit.entity.EntityType
@@ -20,7 +24,10 @@ import org.bukkit.event.player.PlayerInteractAtEntityEvent
 import org.bukkit.event.player.PlayerInteractEntityEvent
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerQuitEvent
+import org.bukkit.event.world.WorldLoadEvent
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -63,7 +70,13 @@ object NPCRegistry : Listener {
     @Volatile
     private var dirty = false
 
-    fun enable(plugin: UnifyCore) {
+    // Set while npcs.yml can't be read; writing then would replace the operator's data with what loaded.
+    private var readOnly = false
+
+    // Raw records for NPCs that couldn't load (usually their world isn't loaded yet), keyed by id.
+    private val unloaded = LinkedHashMap<String, Map<String, Any?>>()
+
+    internal fun enable(plugin: UnifyCore) {
         this.plugin = plugin
         this.dataFile = File(plugin.dataFolder, "npcs.yml")
 
@@ -77,7 +90,7 @@ object NPCRegistry : Listener {
         Bukkit.getScheduler().runTaskTimer(plugin, Runnable { flush() }, FLUSH_INTERVAL, FLUSH_INTERVAL)
     }
 
-    fun disable() {
+    internal fun disable() {
         flush()
         npcs.values.forEach { it.despawn(NPCDespawnEvent.Reason.REQUESTED) }
         npcs.clear()
@@ -132,8 +145,11 @@ object NPCRegistry : Listener {
      * fixed, which beats silently discarding it.
      */
     fun create(id: String, location: Location, entityType: EntityType = EntityType.PLAYER): UnifyNPC? {
+        UnifyModule.NPCS.require()
+        // A dot would split the id into nested YAML keys and the NPC wouldn't load back.
+        require('.' !in id) { "NPC ids can't contain '.': $id" }
         val key = id.lowercase()
-        if (npcs.containsKey(key)) return null
+        if (npcs.containsKey(key) || unloaded.containsKey(key)) return null
 
         val npc = UnifyNPC(key, UUID.randomUUID(), entityType, location)
         npcs[key] = npc
@@ -157,6 +173,7 @@ object NPCRegistry : Listener {
 
     /** Registers a runtime-only click handler for [id]. Not persisted. */
     fun registerAction(id: String, action: NPCAction): Boolean {
+        if (!UnifyModule.NPCS.allowsRegistration(action)) return false
         val npc = get(id) ?: return false
         npc.runtimeAction = action
         return true
@@ -165,6 +182,36 @@ object NPCRegistry : Listener {
     fun unregisterAction(id: String) {
         get(id)?.runtimeAction = null
     }
+
+    // Only click actions are dropped. Traits stay attached so Unify's shutdown save still writes their data.
+    internal fun forgetPlugin(plugin: Plugin) {
+        for (npc in npcs.values) {
+            if (npc.runtimeAction?.let(::owningPlugin) === plugin) npc.runtimeAction = null
+        }
+    }
+
+    /**
+     * Attaches saved [name] traits that were waiting for their plugin to register the type. The saved
+     * data is only dropped once the trait loaded and attached, so a failing trait can't erase it.
+     */
+    internal fun adoptPendingTraits(name: String) {
+        val key = name.lowercase()
+        for (npc in npcs.values) {
+            val data = npc.pendingTraits[key] ?: continue
+            try {
+                val trait = TraitRegistry.create(name) ?: return
+                trait.load(YamlConfiguration().createSection("trait", data))
+                npc.addTrait(trait)
+                npc.pendingTraits.remove(key)
+            } catch (error: Exception) {
+                plugin.logger.warning("Trait '$name' on NPC '${npc.id}' failed to load; keeping its saved data: ${error.message}")
+            }
+        }
+    }
+
+    // Nested sections become nested maps so createSection(path, map) can write them back verbatim.
+    private fun ConfigurationSection.toMap(): Map<String, Any?> =
+        getValues(false).mapValues { (_, value) -> if (value is ConfigurationSection) value.toMap() else value }
 
     // ── Body binding, called by UnifyNPC ────────────────────────────────────
 
@@ -193,10 +240,12 @@ object NPCRegistry : Listener {
         dirty = true
     }
 
-    /** Writes `npcs.yml` if anything changed since the last write. */
+    /**
+     * Writes `npcs.yml` if anything changed since the last write. Goes through a temp file so a failed
+     * write never truncates the real one, and stays dirty on failure so the next flush retries.
+     */
     fun flush() {
-        if (!dirty) return
-        dirty = false
+        if (!dirty || readOnly) return
 
         try {
             dataFile.parentFile?.mkdirs()
@@ -231,59 +280,82 @@ object NPCRegistry : Listener {
                     runCatching { trait.save(section) }
                         .onFailure { plugin.logger.warning("Trait '$traitName' on NPC '$id' failed to save: ${it.message}") }
                 }
+                npc.pendingTraits.forEach { (traitName, data) -> config.createSection("$path.traits.$traitName", data) }
             }
+            // NPCs whose world isn't loaded are written back exactly as they were read.
+            unloaded.forEach { (id, data) -> config.createSection("npcs.$id", data) }
 
-            config.save(dataFile)
+            val temp = File(dataFile.parentFile, "${dataFile.name}.tmp")
+            config.save(temp)
+            Files.move(temp.toPath(), dataFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            dirty = false
         } catch (e: Exception) {
             plugin.logger.warning("Failed to save NPCs: ${e.message}")
             e.printStackTrace()
         }
     }
 
-    /** Reloads every NPC from disk, replacing what is in memory. */
+    /**
+     * Reloads every NPC from disk. Pending in-game edits are saved first, and if the file can't be read
+     * (a YAML typo, or the old pre-trait format) the NPCs in memory are kept and nothing is written
+     * until it's fixed, so a mistake in the file can never wipe it.
+     */
     fun load() {
+        flush()
+        val config = YamlConfiguration()
+        if (dataFile.exists()) {
+            try {
+                config.load(dataFile)
+            } catch (e: Exception) {
+                readOnly = true
+                plugin.logger.severe("npcs.yml couldn't be read, so NPCs were not reloaded and won't be saved until it's fixed: ${e.message}")
+                return
+            }
+        }
+        if (!config.contains("version") && config.contains("npcs")) {
+            readOnly = true
+            plugin.logger.warning(
+                "npcs.yml is in the old pre-trait format and will not be loaded or overwritten. " +
+                    "Move it aside and recreate your NPCs, or delete it to silence this."
+            )
+            return
+        }
+        readOnly = false
+
+        // Click handlers are runtime-only; keep them across a reload instead of silently dropping them.
+        val actions = npcs.mapValues { it.value.runtimeAction }
         npcs.values.forEach { it.despawn(NPCDespawnEvent.Reason.REQUESTED) }
         npcs.clear()
         entityLookup.clear()
+        unloaded.clear()
 
-        try {
-            if (!dataFile.exists()) return
+        val section = config.getConfigurationSection("npcs")
+        for (id in section?.getKeys(false).orEmpty()) {
+            val loaded = runCatching { loadNpc(config, id) }
+                .onFailure { plugin.logger.warning("Failed to load NPC '$id': ${it.message}") }
+                .getOrDefault(false)
+            // Kept verbatim so the next save doesn't drop an NPC just because it couldn't load right now.
+            if (!loaded) section?.getConfigurationSection(id)?.let { unloaded[id] = it.toMap() }
+        }
+        actions.forEach { (id, action) -> npcs[id]?.runtimeAction = action }
+        plugin.logger.info("Loaded ${npcs.size} NPCs" + if (unloaded.isEmpty()) "" else " (${unloaded.size} waiting for their world)")
+    }
 
-            val config = YamlConfiguration.loadConfiguration(dataFile)
-
-            // The pre-traits format has no version key and cannot be read by this code. Say so
-            // once, clearly, instead of loading zero NPCs and looking like nothing happened.
-            if (!config.contains("version") && config.contains("npcs")) {
-                plugin.logger.warning(
-                    "npcs.yml is in the old pre-trait format and will not be loaded. " +
-                        "Move it aside and recreate your NPCs, or delete it to silence this."
-                )
-                return
-            }
-
-            val section = config.getConfigurationSection("npcs") ?: return
-
-            for (id in section.getKeys(false)) {
-                runCatching { loadNpc(config, id) }
-                    .onFailure { plugin.logger.warning("Failed to load NPC '$id': ${it.message}") }
-            }
-
-            plugin.logger.info("Loaded ${npcs.size} NPCs")
-        } catch (e: Exception) {
-            plugin.logger.warning("Failed to load NPCs: ${e.message}")
-            e.printStackTrace()
+    // Worlds loaded after Unify (Multiverse and friends) bring their NPCs with them.
+    @EventHandler
+    fun onWorldLoad(event: WorldLoadEvent) {
+        for ((id, data) in unloaded.filterValues { (it["location"] as? Map<*, *>)?.get("world") == event.world.name }) {
+            val config = YamlConfiguration().apply { createSection("npcs.$id", data) }
+            if (runCatching { loadNpc(config, id) }.getOrDefault(false)) unloaded.remove(id)
         }
     }
 
-    private fun loadNpc(config: YamlConfiguration, id: String) {
+    /** Returns false when the NPC's world isn't loaded yet. */
+    private fun loadNpc(config: YamlConfiguration, id: String): Boolean {
         val path = "npcs.$id"
 
-        val worldName = config.getString("$path.location.world") ?: return
-        val world = Bukkit.getWorld(worldName)
-        if (world == null) {
-            plugin.logger.warning("NPC '$id' lives in unloaded world '$worldName'; skipping it.")
-            return
-        }
+        val worldName = config.getString("$path.location.world") ?: return false
+        val world = Bukkit.getWorld(worldName) ?: return false
 
         val location = Location(
             world,
@@ -308,12 +380,13 @@ object NPCRegistry : Listener {
         // skin, name and pose — otherwise the NPC appears in its default form for a tick.
         config.getConfigurationSection("$path.traits")?.let { traitsSection ->
             for (traitName in traitsSection.getKeys(false)) {
+                val traitSection = traitsSection.getConfigurationSection(traitName) ?: continue
                 val trait = TraitRegistry.create(traitName)
                 if (trait == null) {
-                    plugin.logger.warning("NPC '$id' uses unknown trait '$traitName'; skipping it.")
+                    // Often a plugin that registers this trait just hasn't enabled yet.
+                    npc.pendingTraits[traitName.lowercase()] = traitSection.toMap()
                     continue
                 }
-                val traitSection = traitsSection.getConfigurationSection(traitName) ?: continue
                 runCatching { trait.load(traitSection) }
                     .onFailure { plugin.logger.warning("Trait '$traitName' on NPC '$id' failed to load: ${it.message}") }
                 npc.addTrait(trait)
@@ -322,6 +395,7 @@ object NPCRegistry : Listener {
 
         npcs[id.lowercase()] = npc
         npc.spawn()
+        return true
     }
 
     // ── Events ──────────────────────────────────────────────────────────────

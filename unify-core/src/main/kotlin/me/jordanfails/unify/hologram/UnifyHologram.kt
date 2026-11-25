@@ -1,5 +1,6 @@
 package me.jordanfails.unify.hologram
 
+import me.jordanfails.unify.module.UnifyModule
 import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.utils.checkMainThread
 import org.bukkit.plugin.Plugin
@@ -245,6 +246,7 @@ class UnifyHologram(
             updateIntervalTicks: Long = 20L,
             provider: (Player) -> List<HologramLine>,
         ): UnifyHologram {
+            UnifyModule.HOLOGRAMS.require()
             checkMainThread()
             require(owner.isEnabled) { "The owning plugin must be enabled" }
             require(updateIntervalTicks >= 0L) { "Update interval cannot be negative" }

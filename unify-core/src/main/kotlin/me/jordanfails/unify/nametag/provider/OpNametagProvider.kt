@@ -8,10 +8,11 @@ import org.bukkit.entity.Player
 class OpNametagProvider : NametagProvider("OP Nametag Provider", 10) {
 
     override fun fetchNametag(toRefresh: Player, refreshFor: Player): NametagInfo {
+        val lines = configuredLines(toRefresh, refreshFor)
         return if (toRefresh.isOp) {
-            createNametag(CC.translate("&e✿ &a"), "")
+            createNametag(CC.translate("&e✿ &a"), "", lines)
         } else {
-            createNametag(CC.translate("&7"), "")
+            createNametag(CC.translate("&7"), "", lines)
         }
     }
 }

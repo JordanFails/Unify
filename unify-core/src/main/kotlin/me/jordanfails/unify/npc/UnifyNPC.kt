@@ -60,10 +60,16 @@ class UnifyNPC internal constructor(
     @Volatile
     internal var runtimeAction: NPCAction? = null
 
+    /**
+     * Saved data for traits whose type isn't registered right now (its plugin hasn't enabled yet, or
+     * has disabled). Written back on save so the data survives until the trait is registered again.
+     */
+    internal val pendingTraits = ConcurrentHashMap<String, Map<String, Any?>>()
+
     // ── Lifecycle ───────────────────────────────────────────────────────────
 
     /** True when a body exists. Since chunks are pinned, this only goes false via [despawn]. */
-    fun isSpawned(): Boolean = entityUuid?.let { Bukkit.getEntity(it) != null } ?: false
+    fun isSpawned(): Boolean = entityUuid?.let { findEntity(it) != null } ?: false
 
     /**
      * Creates the body, pinning its chunk first so the entity cannot be discarded later.
@@ -82,11 +88,12 @@ class UnifyNPC internal constructor(
             return false
         }
 
-        ChunkPin.pin(location)
+        ChunkPin.pin(id, location)
 
         val handler = NMSHandlerFactory.getHandler()
         if (handler == null) {
             UnifyCore.instance.logger.warning("No NMS handler for this server version; NPC '$id' cannot spawn.")
+            ChunkPin.unpin(id)
             return false
         }
 
@@ -105,6 +112,7 @@ class UnifyNPC internal constructor(
                         "Further failures for this NPC will not be logged."
                 )
             }
+            ChunkPin.unpin(id)
             return false
         }
 
@@ -140,7 +148,7 @@ class UnifyNPC internal constructor(
         // Keep the pin across a respawn: releasing and re-pinning would let the chunk unload in
         // between, which is exactly the window the old implementation kept losing bodies in.
         if (reason != NPCDespawnEvent.Reason.RESPAWN) {
-            ChunkPin.unpin(location)
+            ChunkPin.unpin(id)
         }
     }
 
@@ -150,17 +158,12 @@ class UnifyNPC internal constructor(
         location = destination.clone()
 
         if (isSpawned()) {
-            ChunkPin.pin(destination)
+            // Moves this NPC's hold to the destination chunk (releasing the old one if nobody else is there).
+            ChunkPin.pin(id, destination)
             val moved = entityUuid?.let { NMSHandlerFactory.getHandler()?.teleportNpcEntity(it, destination) } ?: false
             // A cross-world move cannot be a teleport on most versions — rebuild instead.
             if (!moved || previous.world != destination.world) {
                 spawn()
-            }
-            if (previous.world != destination.world ||
-                previous.blockX shr 4 != destination.blockX shr 4 ||
-                previous.blockZ shr 4 != destination.blockZ shr 4
-            ) {
-                ChunkPin.unpin(previous)
             }
         }
     }

@@ -1,5 +1,6 @@
 package me.jordanfails.unify.preview
 
+import me.jordanfails.unify.Beta
 import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.utils.checkMainThread
 import org.bukkit.Bukkit
@@ -21,6 +22,7 @@ import org.bukkit.plugin.Plugin
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
+@Beta
 object WorldPreviews : Listener {
     private val previews = linkedSetOf<WorldPreview>()
     private var task: BukkitTask? = null

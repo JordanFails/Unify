@@ -1,5 +1,7 @@
 package me.jordanfails.unify.screen
 
+import me.jordanfails.unify.Beta
+import me.jordanfails.unify.module.UnifyModule
 import me.jordanfails.unify.nms.NMSHandlerFactory
 import org.bukkit.entity.Player
 import java.util.ArrayDeque
@@ -10,6 +12,7 @@ import java.util.concurrent.ConcurrentHashMap
  * Runtime bookkeeping for native custom screens: support check, currently-open
  * screen, and back-navigation history.
  */
+@Beta
 object Screens {
 
     private const val MAX_DEPTH = 16
@@ -28,6 +31,7 @@ object Screens {
      * @return true if the native screen was shown
      */
     fun open(player: Player, screen: Screen, track: Boolean = true): Boolean {
+        UnifyModule.MENUS.require()
         val handler = NMSHandlerFactory.getHandler()
         if (handler == null || !handler.supportsCustomScreens()) {
             return false

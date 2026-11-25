@@ -1,5 +1,6 @@
 package me.jordanfails.unify.screen
 
+import me.jordanfails.unify.Beta
 import org.bukkit.entity.Player
 
 /**
@@ -22,6 +23,7 @@ import org.bukkit.entity.Player
  * Unsupported on older versions: [open] returns false. Check [Screens.supported]
  * first, or use inventory [me.jordanfails.unify.menu.Menu]s as a fallback.
  */
+@Beta
 abstract class Screen {
 
     abstract fun getTitle(player: Player): String

@@ -1,5 +1,7 @@
 package me.jordanfails.unify.utils.prompt
 
+import org.bukkit.conversations.Conversation
+import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.utils.CC
 import me.jordanfails.unify.utils.sendMessage
 import net.kyori.adventure.text.Component
@@ -28,6 +30,7 @@ class InputPrompt : StringPrompt() {
     private var currentRetries = 0
 
     private var timeoutTask: BukkitRunnable? = null
+    private var conversation: Conversation? = null
 
     fun withText(text: String): InputPrompt {
         this.promptText = CC.translate(text)
@@ -133,22 +136,21 @@ class InputPrompt : StringPrompt() {
         timeoutTask?.cancel()
         timeoutTask = object : BukkitRunnable() {
             override fun run() {
+                // Actually end the conversation, or the expired prompt keeps swallowing the player's chat.
+                conversation?.abandon()
                 player.sendMessage(Component.text("${ChatColor.RED}Input time limit reached. Conversation cancelled."))
                 timeout?.invoke()
             }
         }
 
-        timeoutTask!!.runTaskLaterAsynchronously(
-            Bukkit.getPluginManager().getPlugin("AscendCore")!!,
-            20L * timeLimitSeconds
-        )
+        timeoutTask!!.runTaskLater(UnifyCore.instance, 20L * timeLimitSeconds)
     }
 
     fun start(player: Player) {
         require(use != null) { "No acceptInput() handler provided before starting prompt." }
 
+        conversation = ConversationUtil.startConversation(player, this)
         startTimer(player)
-        ConversationUtil.startConversation(player, this)
     }
 
     fun cancel() {

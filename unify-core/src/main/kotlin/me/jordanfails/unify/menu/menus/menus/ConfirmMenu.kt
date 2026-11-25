@@ -72,7 +72,7 @@ class ConfirmMenu(
             override fun clicked(player: Player, slot: Int, clickType: ClickType, view: InventoryView) {
                 if (!called) {
                     called = true
-                    player.playSound(player.location, Sound.UI_BUTTON_CLICK, 1f, 1.2f)
+                    player.playSound(player.location, XSupport.resolveSound(XSound.UI_BUTTON_CLICK), 1f, 1.2f)
                     player.closeInventory()
                     callback(true)
                 }

@@ -1,5 +1,6 @@
 package me.jordanfails.unify.menu.anvil
 
+import me.jordanfails.unify.module.UnifyModule
 import me.jordanfails.unify.menu.Menu
 import me.jordanfails.unify.nms.NMSHandlerFactory
 import me.jordanfails.unify.utils.CC
@@ -94,6 +95,7 @@ class AnvilInput {
      * @return the live session, or null if NMS is unavailable
      */
     fun open(player: Player): AnvilSession? {
+        UnifyModule.MENUS.require()
         require(onComplete != null || onClick != null) {
             "AnvilInput requires onComplete() or onClick() before open()"
         }

@@ -54,23 +54,23 @@ object BukkitNpcBody {
     }
 
     fun despawn(entityUuid: UUID) {
-        Bukkit.getEntity(entityUuid)?.remove()
+        findEntity(entityUuid)?.remove()
     }
 
     fun teleport(entityUuid: UUID, location: Location): Boolean {
-        val entity = Bukkit.getEntity(entityUuid) ?: return false
+        val entity = findEntity(entityUuid) ?: return false
         if (entity.world != location.world) return false
         return entity.teleport(location)
     }
 
     fun setName(entityUuid: UUID, name: String?, visible: Boolean): Boolean {
-        val entity = Bukkit.getEntity(entityUuid) ?: return false
+        val entity = findEntity(entityUuid) ?: return false
         applyName(entity, name, visible)
         return true
     }
 
     fun setEquipment(entityUuid: UUID, slot: NPCEquipmentSlot, item: ItemStack?): Boolean {
-        val entity = Bukkit.getEntity(entityUuid) as? LivingEntity ?: return false
+        val entity = findEntity(entityUuid) as? LivingEntity ?: return false
         val equipment = entity.equipment ?: return false
 
         // Setter names differ across versions (off-hand only exists from 1.9), so this goes
@@ -95,7 +95,7 @@ object BukkitNpcBody {
     }
 
     fun setLook(entityUuid: UUID, yaw: Float, pitch: Float): Boolean {
-        val entity = Bukkit.getEntity(entityUuid) ?: return false
+        val entity = findEntity(entityUuid) ?: return false
         val target = entity.location
         target.yaw = yaw
         target.pitch = pitch
@@ -112,7 +112,7 @@ object BukkitNpcBody {
      * leaving the NPC standing.
      */
     fun setPose(entityUuid: UUID, pose: NPCPose): Boolean {
-        val entity = Bukkit.getEntity(entityUuid) ?: return false
+        val entity = findEntity(entityUuid) ?: return false
         return when (pose) {
             NPCPose.STANDING -> invokeBooleanSetter(entity, "setSneaking", false)
             NPCPose.SNEAKING -> invokeBooleanSetter(entity, "setSneaking", true)

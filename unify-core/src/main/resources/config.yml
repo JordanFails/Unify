@@ -1,34 +1,42 @@
+# Module switches take effect after a server restart. Turning a module off removes it for every
+# plugin; plugins that declare they need it (@UnifyPlugin(modules = [...])) log an error at startup.
+modules:
+  visibility: true
+  nametags: true
+  scoreboard: true
+  tab: true
+  bossbar: true
+  menus: true
+  holograms: true
+  npcs: true
+  requests: true
+  world-previews: true
+
+# Every display below also runs whenever another plugin registers a provider for it.
+# The "enabled" flags only turn on Unify's own config-driven display, so a fresh install changes nothing.
+
+nametags:
+  enabled: false
+  update-interval-ticks: 2
+  # Extra lines above the normal player name, ordered from top to bottom.
+  # Supports & colors, {player}, and {viewer}. An empty list keeps a single-line nametag.
+  lines: []
+
 scoreboard:
-  enabled: true
-  title: "&d&lHUB"
+  # Unify has no built-in sidebar; this only paces boards that plugins provide.
   update-interval-ticks: 20
-  lines:
-    - "&fRank: &d<rank>"
-    - "&fFriends Online: &d0"
-    - "&fLevel: &d0"
-    - "  &fProgress: &d<bar>"
-    - ""
-    - "&fLobby: &dGarden"
-    - "&fPlayers: &d0/1000"
-    - ""
-    - "&eplay.etheriamc.net"
 
 tab:
-  enabled: true
+  enabled: false
   update-interval-ticks: 40
+  # Supports & colors, {player}, {online}, {max_players} and {ping}.
   header:
-    - ""
-    - "<gradient:light_purple:gold><bold>EtheriaMC</bold></gradient>"
-    - "&7Welcome, &f{player}"
-    - ""
+    - "&fWelcome, {player}"
   footer:
-    - ""
-    - "&7Online: &d{online}&7/&d{max_players}"
-    - "&eplay.etheriamc.net"
-    - ""
+    - "&7Online: &f{online}&7/&f{max_players}"
 
 bossbar:
-  enabled: true
+  enabled: false
   update-interval-ticks: 20
   tick-interval-ticks: 4
   # Indent prefix prepended once per nesting level.

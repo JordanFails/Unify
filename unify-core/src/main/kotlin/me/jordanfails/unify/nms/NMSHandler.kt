@@ -77,6 +77,9 @@ interface NMSHandler {
      * Removes the nametag team for a target from a viewer (cleanup).
      */
     fun sendRemoveNametagTeamPacket(viewer: Player, target: Player)
+
+    /** Removes the team called [teamName] from [viewer]'s client, e.g. a provider team Unify no longer uses. */
+    fun sendRemoveTeamPacket(viewer: Player, teamName: String)
     
     /**
      * Sends a nametag team packet with prefix and suffix for colored nametags.
@@ -87,7 +90,18 @@ interface NMSHandler {
      * @param suffix Suffix to display after the player's name
      */
     fun sendNametagPacket(viewer: Player, target: Player, teamName: String, prefix: String, suffix: String)
-    
+
+    /**
+     * Whether extra nametag lines can ride the player on the viewer's client (1.20.5+). The client
+     * then moves them with the player every frame. Without it, extra lines are disabled.
+     */
+    fun supportsRidingNametagLines(): Boolean = false
+
+    /** Called every tick while [target]'s lines should be visible to [viewer]; cheap when nothing changed. */
+    fun showNametagLines(viewer: Player, target: Player, lines: List<String>) {}
+
+    fun hideNametagLines(viewer: Player, target: UUID) {}
+
     // --- Scoreboard Limits ---
     /**
      * Returns the maximum character limit for scoreboard lines.

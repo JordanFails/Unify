@@ -1,11 +1,13 @@
 package me.jordanfails.unify.bossbar
 
-import com.google.common.primitives.Ints
+import me.jordanfails.unify.module.UnifyModule
 import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.config.UnifyConfig
 import me.jordanfails.unify.npc.NPCRegistry
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
+import org.bukkit.plugin.Plugin
+import me.jordanfails.unify.plugin.ProviderRegistry
 import org.bukkit.scheduler.BukkitTask
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -23,46 +25,60 @@ object BossBarHandler {
 
     private val playerInfo = ConcurrentHashMap<UUID, BossBarInfo>()
     private val playerBars = ConcurrentHashMap<UUID, LinkedHashMap<String, UnifyBossBar>>()
-    private val providers = ArrayList<BossBarProvider>()
+    private val providers = ProviderRegistry<BossBarProvider> { it.weight }
 
     private var enabled: Boolean = false
     private var refreshTask: BukkitTask? = null
 
+    // Bumped on every restart; a display queued before it is dropped instead of reappearing after cleanup.
+    @Volatile
+    private var generation = 0
+
+
     var updateInterval: Int = 20
         private set
 
-    fun initialLoad() {
+    internal fun initialLoad() {
         reloadAll()
     }
 
     fun reloadAll() {
-        enabled = UnifyConfig.BossBar.enabled.get()
         updateInterval = UnifyConfig.BossBar.updateInterval.get().coerceAtLeast(1)
+        // bossbar.enabled only controls Unify's own bars from config; plugin providers work regardless.
+        providers.setBuiltIns(
+            if (UnifyConfig.BossBar.enabled.get()) listOf(BossBarProvider.DefaultBossBarProvider()) else emptyList()
+        )
+        restart()
+    }
 
+    fun registerProvider(newProvider: BossBarProvider) {
+        if (!UnifyModule.BOSSBAR.allowsRegistration(newProvider)) return
+        providers.add(newProvider)
+        restart()
+    }
+
+    internal fun forgetPlugin(plugin: Plugin) {
+        if (providers.removeOwnedBy(plugin)) restart()
+    }
+
+    private fun restart() {
+        generation++
         refreshTask?.cancel()
         refreshTask = null
-        providers.clear()
+        enabled = UnifyModule.BOSSBAR.isEnabled && !providers.isEmpty()
 
         if (!enabled) {
-            UnifyCore.instance.logger.info("Auto-updating boss bars are disabled by config")
             clearAll()
             return
         }
 
-        registerProvider(BossBarProvider.DefaultBossBarProvider())
-
-        refreshTask = Bukkit.getScheduler().runTaskTimerAsynchronously(UnifyCore.instance, Runnable {
+        refreshTask = Bukkit.getScheduler().runTaskTimer(UnifyCore.instance, Runnable {
             for (player in NPCRegistry.realOnlinePlayers()) {
                 reloadPlayer(player)
             }
         }, 20L, updateInterval.toLong())
 
         NPCRegistry.realOnlinePlayers().forEach { reloadPlayer(it) }
-    }
-
-    fun registerProvider(newProvider: BossBarProvider) {
-        providers.add(newProvider)
-        providers.sortWith { a, b -> Ints.compare(b.weight, a.weight) }
     }
 
     fun initiatePlayer(player: Player) {
@@ -92,7 +108,7 @@ object BossBarHandler {
         if (NPCRegistry.isNpc(player)) return
 
         // Every provider's bars stack, highest weight on top; a repeated line id keeps its first row.
-        val results = providers.mapNotNull { it.fetchBossBar(player) }
+        val results = providers.allOf { it.fetchBossBar(player) }
         val provided = if (results.isEmpty()) null
             else BossBarInfo(results.flatMap { it.lines }.distinctBy { it.id })
 
@@ -109,8 +125,9 @@ object BossBarHandler {
         if (playerInfo[player.uniqueId] == info) return
         playerInfo[player.uniqueId] = info
 
+        val queuedIn = generation
         Bukkit.getScheduler().runTask(UnifyCore.instance, Runnable {
-            if (!player.isOnline) return@Runnable
+            if (!player.isOnline || queuedIn != generation) return@Runnable
             apply(player, info)
         })
     }
@@ -132,7 +149,7 @@ object BossBarHandler {
 
     fun providerCount(): Int = providers.size
 
-    fun providers(): List<BossBarProvider> = providers.toList()
+    fun providers(): List<BossBarProvider> = providers.sorted.toList()
 
     private fun apply(player: Player, info: BossBarInfo) {
         val flattened = info.flatten()

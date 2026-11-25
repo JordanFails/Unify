@@ -36,6 +36,10 @@ class HologramCommand : BaseCommand() {
             player.sendMessage(CC.translate("&cA hologram with ID '$id' already exists."))
             return
         }
+        if ('.' in id) {
+            player.sendMessage(CC.translate("&cHologram IDs can't contain '.'."))
+            return
+        }
         
         val lines = if (text != null) listOf(text) else emptyList()
         val hologram = HologramManager.create(id, player.location, *lines.toTypedArray())

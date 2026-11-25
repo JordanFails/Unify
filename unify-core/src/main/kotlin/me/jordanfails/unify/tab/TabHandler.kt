@@ -1,10 +1,12 @@
 package me.jordanfails.unify.tab
 
-import com.google.common.primitives.Ints
+import me.jordanfails.unify.module.UnifyModule
 import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.nametag.NametagHandler
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
+import org.bukkit.plugin.Plugin
+import me.jordanfails.unify.plugin.ProviderRegistry
 import org.bukkit.scheduler.BukkitTask
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
@@ -12,46 +14,75 @@ import java.util.concurrent.ConcurrentHashMap
 object TabHandler {
 
     private val playerTabs = ConcurrentHashMap<UUID, TabInfo>()
-    private var providers = ArrayList<TabProvider>()
-    private val sortProviders = ArrayList<TabSortProvider>()
+    private val providers = ProviderRegistry<TabProvider> { it.weight }
+    private val sortProviders = ProviderRegistry<TabSortProvider> { it.weight }
 
     private var enabled: Boolean = false
     private var refreshTask: BukkitTask? = null
+
+    // Bumped on every restart; a display queued before it is dropped instead of reappearing after cleanup.
+    @Volatile
+    private var generation = 0
+
     var updateInterval: Int = 40
 
-    fun initialLoad() {
+    internal fun initialLoad() {
         reloadAll()
     }
 
     fun reloadAll() {
         val config = UnifyCore.instance.config
-        enabled = config.getBoolean("tab.enabled", true)
         updateInterval = config.getInt("tab.update-interval-ticks", updateInterval).coerceAtLeast(1)
+        // tab.enabled only controls Unify's own header/footer from config; plugin providers work regardless.
+        providers.setBuiltIns(
+            if (config.getBoolean("tab.enabled", false)) listOf(TabProvider.DefaultTabProvider()) else emptyList()
+        )
+        restart()
+    }
 
+    internal fun disable() {
+        generation++
         refreshTask?.cancel()
         refreshTask = null
-        providers.clear()
+        enabled = false
+        val nms = UnifyCore.instance.nms
+        playerTabs.keys.mapNotNull(Bukkit::getPlayer).forEach { nms?.sendTabHeaderFooter(it, "", "") }
+        playerTabs.clear()
+    }
+
+    fun registerProvider(newProvider: TabProvider) {
+        if (!UnifyModule.TAB.allowsRegistration(newProvider)) return
+        providers.add(newProvider)
+        restart()
+    }
+
+    internal fun forgetPlugin(plugin: Plugin) {
+        if (providers.removeOwnedBy(plugin)) restart()
+        if (sortProviders.removeOwnedBy(plugin) && NametagHandler.isEnabled()) {
+            Bukkit.getOnlinePlayers().forEach { NametagHandler.reloadPlayer(it) }
+        }
+    }
+
+    private fun restart() {
+        generation++
+        refreshTask?.cancel()
+        refreshTask = null
+        enabled = UnifyModule.TAB.isEnabled && !providers.isEmpty()
 
         if (!enabled) {
-            UnifyCore.instance.logger.info("Custom tab header/footer is disabled by config")
+            val nms = UnifyCore.instance.nms
+            playerTabs.keys.mapNotNull(Bukkit::getPlayer).forEach { nms?.sendTabHeaderFooter(it, "", "") }
             playerTabs.clear()
             return
         }
 
-        registerProvider(TabProvider.DefaultTabProvider())
-
-        refreshTask = Bukkit.getScheduler().runTaskTimerAsynchronously(UnifyCore.instance, Runnable {
+        refreshTask = Bukkit.getScheduler().runTaskTimer(UnifyCore.instance, Runnable {
             for (player in Bukkit.getOnlinePlayers()) {
                 reloadPlayer(player)
             }
         }, 20L, updateInterval.toLong())
 
         Bukkit.getOnlinePlayers().forEach { reloadPlayer(it) }
-    }
-
-    fun registerProvider(newProvider: TabProvider) {
-        providers.add(newProvider)
-        providers.sortWith { a, b -> Ints.compare(b.weight, a.weight) }
     }
 
     /**
@@ -61,13 +92,13 @@ object TabHandler {
      * Already-online players are refreshed so the new order applies immediately.
      */
     fun registerSortProvider(newProvider: TabSortProvider) {
+        if (!UnifyModule.TAB.allowsRegistration(newProvider)) return
         sortProviders.add(newProvider)
-        sortProviders.sortWith { a, b -> Ints.compare(b.weight, a.weight) }
 
         if (!NametagHandler.isEnabled()) {
             UnifyCore.instance.logger.warning(
                 "Tab sort provider '${newProvider.name}' registered, but nametags are disabled. " +
-                    "Tab sorting uses nametag teams and will not apply until nametags are enabled."
+                    "Tab sorting uses nametag teams, so it only applies once a nametag provider is registered or nametags.enabled is true."
             )
             return
         }
@@ -80,14 +111,8 @@ object TabHandler {
      * Higher values appear higher in the tab list.
      */
     fun sortWeight(player: Player): Int {
-        var providerIndex = 0
-        while (providerIndex < sortProviders.size) {
-            val weight = sortProviders[providerIndex++].fetchSortWeight(player)
-            if (weight != null) {
-                return weight
-            }
-        }
-        return 0
+        if (!UnifyCore.instance.modules.isEnabled(UnifyModule.TAB)) return 0
+        return sortProviders.firstOf { it.fetchSortWeight(player) } ?: 0
     }
 
     fun initiatePlayer(player: Player) {
@@ -105,14 +130,14 @@ object TabHandler {
     fun reloadPlayer(player: Player) {
         if (!enabled) return
 
-        var provided: TabInfo? = null
-        var providerIndex = 0
-
-        while (provided == null && providerIndex < providers.size) {
-            provided = providers[providerIndex++].fetchTab(player)
-        }
-
+        val provided = providers.firstOf { it.fetchTab(player) }
         if (provided == null) {
+            // No provider applies to this player anymore; don't leave a stale header/footer up.
+            if (playerTabs.remove(player.uniqueId) != null) {
+                Bukkit.getScheduler().runTask(UnifyCore.instance, Runnable {
+                    if (player.isOnline) UnifyCore.instance.nms?.sendTabHeaderFooter(player, "", "")
+                })
+            }
             return
         }
 
@@ -129,8 +154,9 @@ object TabHandler {
         val nms = UnifyCore.instance.nms ?: return
         playerTabs[player.uniqueId] = rendered
 
+        val queuedIn = generation
         Bukkit.getScheduler().runTask(UnifyCore.instance, Runnable {
-            if (!player.isOnline) return@Runnable
+            if (!player.isOnline || queuedIn != generation) return@Runnable
             nms.sendTabHeaderFooter(player, rendered.header, rendered.footer)
         })
     }
@@ -156,6 +182,6 @@ object TabHandler {
     }
 
     fun sortProviders(): List<TabSortProvider> {
-        return sortProviders.toList()
+        return sortProviders.sorted.toList()
     }
 }

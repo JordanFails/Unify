@@ -284,12 +284,13 @@ class NMSHandler_v1_8_R3 : NMSHandler {
     }
 
     override fun sendRemoveNametagTeamPacket(viewer: Player, target: Player) {
+        sendRemoveTeamPacket(viewer, getTeamName(target))
+    }
+
+    override fun sendRemoveTeamPacket(viewer: Player, teamName: String) {
         val packet = PacketPlayOutScoreboardTeam()
-        val teamName = getTeamName(target)
-        
-        setField(packet, "a", teamName) // team name
+        setField(packet, "a", teamName.take(16)) // team name
         setField(packet, "h", 1) // mode: 1 = remove team
-        
         (viewer as CraftPlayer).handle.playerConnection.sendPacket(packet)
     }
     

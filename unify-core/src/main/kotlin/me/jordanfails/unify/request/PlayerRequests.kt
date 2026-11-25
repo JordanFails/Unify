@@ -1,5 +1,6 @@
 package me.jordanfails.unify.request
 
+import me.jordanfails.unify.Beta
 import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.utils.CC
 import me.jordanfails.unify.utils.checkMainThread
@@ -21,6 +22,7 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
+@Beta
 object PlayerRequests : Listener {
     private val pending = linkedMapOf<UUID, PlayerRequest>()
     private var task: BukkitTask? = null

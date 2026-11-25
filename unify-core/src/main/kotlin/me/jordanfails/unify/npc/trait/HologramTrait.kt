@@ -1,5 +1,7 @@
 package me.jordanfails.unify.npc.trait
 
+import me.jordanfails.unify.UnifyCore
+import me.jordanfails.unify.module.UnifyModule
 import me.jordanfails.unify.hologram.HologramLine
 import me.jordanfails.unify.hologram.UnifyHologram
 import me.jordanfails.unify.npc.NPCRegistry
@@ -58,7 +60,7 @@ class HologramTrait : Trait("hologram") {
     }
 
     private fun rebuild() {
-        if (!isAttached) return
+        if (!isAttached || !UnifyCore.instance.modules.isEnabled(UnifyModule.HOLOGRAMS)) return
 
         val world = npc.location.world
         if (world == null || lines.isEmpty()) {

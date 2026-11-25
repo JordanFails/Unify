@@ -25,6 +25,10 @@ import org.bukkit.entity.Player
  *
  * After a rank change, call [me.jordanfails.unify.nametag.NametagHandler.reloadPlayer] so the
  * player's tab position updates immediately.
+ *
+ * Threading: called on Unify's nametag thread (the work grows with players x viewers), so only read
+ * thread-safe state such as cached values or the player's name/UUID. Don't touch worlds, entities or inventories.
+ * A provider that throws is skipped and logged once. Providers are removed when their plugin disables.
  */
 abstract class TabSortProvider(val name: String, val weight: Int) {
 

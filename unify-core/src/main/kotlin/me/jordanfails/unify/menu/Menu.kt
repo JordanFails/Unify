@@ -1,5 +1,9 @@
 package me.jordanfails.unify.menu
 
+import me.jordanfails.unify.plugin.owningPlugin
+import me.jordanfails.unify.menu.history.MenuHistory
+import org.bukkit.plugin.Plugin
+import me.jordanfails.unify.module.UnifyModule
 import com.cryptomorin.xseries.XMaterial
 import me.jordanfails.unify.UnifyCore
 import me.jordanfails.unify.menu.anvil.AnvilSession
@@ -98,8 +102,11 @@ abstract class Menu {
         buttons.clear()
         val type = getInventoryType()
         val inv = if (type == InventoryType.CHEST) {
-            val size = maxOf(size(invButtons), getMinSize())
-            require(size in 9..54 && size % 9 == 0) { "Menu size must be a multiple of nine between 9 and 54: $size" }
+            // While open, never shrink: a refresh (e.g. a short last page) must fit the inventory already shown.
+            val shown = player.openInventory.topInventory
+                .takeIf { currentlyOpenedMenus[player.uniqueId] === this && ownsInventory(it) }?.size ?: 0
+            val size = maxOf(size(invButtons), getMinSize(), shown)
+            MenuSizes.requireValid(size) { "${javaClass.simpleName}'s size ($size)" }
             Bukkit.createInventory(null, size, title)
         } else {
             Bukkit.createInventory(null, type, title)
@@ -168,6 +175,8 @@ abstract class Menu {
 
 
     fun openMenu(player: Player) {
+        UnifyModule.MENUS.require()
+        if (ownerGone()) return
         if (!Bukkit.isPrimaryThread()) {
             Bukkit.getScheduler().runTask(UnifyCore.instance, Runnable { openMenu(player) })
             return
@@ -178,7 +187,7 @@ abstract class Menu {
         val expectedInventory = player.openInventory.topInventory
         fun complete(success: Boolean) {
             val action = Runnable {
-                if (pendingOpens[player.uniqueId] != request || !player.isOnline) return@Runnable
+                if (pendingOpens[player.uniqueId] != request || !player.isOnline || ownerGone()) return@Runnable
                 pendingOpens.remove(player.uniqueId, request)
                 if (async && player.openInventory.topInventory != expectedInventory) return@Runnable
                 if (!success) {
@@ -212,6 +221,9 @@ abstract class Menu {
     fun open(player: Player) {
         openMenu(player)
     }
+
+    // A late async open or a "back" press must not bring up a menu whose plugin is shutting down.
+    private fun ownerGone(): Boolean = owningPlugin(this)?.isEnabled == false
 
     fun update(player: Player) {
         // set open menu reference to this menu
@@ -314,14 +326,15 @@ abstract class Menu {
     open fun getInventoryType(): InventoryType = InventoryType.CHEST
 
     /**
-     * Minimum inventory size. Return -1 for no minimum.
+     * Minimum inventory size. Return -1 for no minimum. Defaults to the class's [MenuSize]; overriding
+     * this takes precedence over the annotation.
      *
      * Override this (not [size]) to enforce a minimum menu size in bordered
      * menus — [BorderedMenu.getMenuSize] and [PaginatedBorderedMenu.getMenuSize]
      * both consult this method.
      */
     open fun getMinSize(): Int {
-        return -1
+        return MenuSizes.of(javaClass)
     }
 
     fun getSlot(x: Int, y: Int): Int {
@@ -385,6 +398,14 @@ abstract class Menu {
 
         @JvmStatic
         var currentlyOpenedMenus: MutableMap<UUID, Menu> = ConcurrentHashMap()
+
+        /** Closes [plugin]'s menus and drops them from history so nothing keeps calling into it. */
+        internal fun forgetPlugin(plugin: Plugin) {
+            MenuHistory.removeIf { owningPlugin(it) === plugin }
+            for ((uuid, menu) in currentlyOpenedMenus.entries.toList()) {
+                if (owningPlugin(menu) === plugin) Bukkit.getPlayer(uuid)?.closeInventory()
+            }
+        }
     }
 
 }

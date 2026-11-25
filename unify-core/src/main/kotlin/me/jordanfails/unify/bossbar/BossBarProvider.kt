@@ -8,6 +8,10 @@ import org.bukkit.entity.Player
  *
  * Every provider's bars are stacked, highest [weight] on top. Returning `null` or
  * [BossBarInfo.EMPTY] adds nothing.
+ *
+ * Threading: Unify calls this on the main thread, so it may use the Bukkit API. If your plugin calls a
+ * handler's reloadPlayer from another thread, it runs on that thread instead.
+ * A provider that throws is skipped and logged once. Providers are removed when their plugin disables.
  */
 abstract class BossBarProvider(val name: String, val weight: Int) {
 

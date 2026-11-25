@@ -1,88 +1,121 @@
 package me.jordanfails.unify.nametag
 
-import com.google.common.primitives.Ints
 import me.jordanfails.unify.UnifyCore
+import me.jordanfails.unify.module.UnifyModule
 import me.jordanfails.unify.nametag.provider.OpNametagProvider
 import me.jordanfails.unify.nametag.thread.NametagThread
 import me.jordanfails.unify.nametag.update.NametagUpdate
+import me.jordanfails.unify.plugin.ProviderRegistry
+import me.jordanfails.unify.plugin.owningPlugin
 import me.jordanfails.unify.tab.TabHandler
 import me.jordanfails.unify.tab.TabSortProvider
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
+import org.bukkit.plugin.Plugin
 import org.bukkit.scheduler.BukkitTask
-import java.util.*
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
+/**
+ * Nametag teams per viewer. Providers run on [NametagThread] because the work grows with
+ * players x viewers; everything the thread reads is kept in thread-safe maps updated from the main
+ * thread, and every packet goes out under [sendLock] so a restart can't race a send.
+ */
 object NametagHandler {
 
-    internal val teamMap = ConcurrentHashMap<UUID, HashMap<UUID, NametagInfo>>()
+    internal val teamMap = ConcurrentHashMap<UUID, MutableMap<UUID, NametagInfo>>()
 
-    private val registeredTeams = Collections.synchronizedList(ArrayList<NametagInfo>())
+    // Targets whose plate is hidden per viewer; they sit in a separate hide team that needs its own cleanup.
+    private val hiddenFor = ConcurrentHashMap<UUID, MutableSet<UUID>>()
+
+    // Online players, maintained on join/quit so the nametag thread never reads Bukkit's live player list.
+    private val viewers = ConcurrentHashMap<UUID, Player>()
+
+    // A set, so the same refresh queued twice before the thread gets to it runs once.
+    internal val pending: MutableSet<NametagUpdate> = ConcurrentHashMap.newKeySet()
+
+    private val registeredTeams = ArrayList<NametagInfo>()
     private var teamCreateIndex = 1
-    private var providers = ArrayList<NametagProvider>()
+    private val providers = ProviderRegistry<NametagProvider> { it.weight }
+    private val sendLock = Any()
 
     /** Plugins that want a player's plate gone entirely; see [hideNametagsWhen]. */
     private val hideRules = CopyOnWriteArrayList<(Player) -> Boolean>()
 
     private var isNametagRestrictionEnabled: Boolean = false
     private var nametagRestrictBypass: String = ""
-    private var async: Boolean = true
-    
+
+    @Volatile
     private var enabled: Boolean = false
-    private var threadStarted: Boolean = false
+
+    // Bumped (under sendLock) on every restart; work started before it is dropped instead of sent.
+    @Volatile
+    private var generation = 0
+    private var thread: NametagThread? = null
     private var refreshTask: BukkitTask? = null
 
     var updateInterval: Int = 2
 
-    fun initialLoad() {
+    internal fun initialLoad() {
         reloadAll()
     }
 
     fun reloadAll() {
-        enabled = UnifyCore.instance.config.getBoolean("nametags.enabled", true)
-        updateInterval = UnifyCore.instance.config
-            .getInt("nametags.update-interval-ticks", updateInterval)
-            .coerceAtLeast(1)
-        if (!enabled) {
-            UnifyCore.instance.logger.info("Auto-updating nametags are disabled by config")
-            teamMap.clear()
-            refreshTask?.cancel()
-            refreshTask = null
-            return
-        }
-
-        isNametagRestrictionEnabled = UnifyCore.instance.config.getBoolean("nametags.packet-restriction", false)
-        nametagRestrictBypass = UnifyCore.instance.config.getString("nametags.packet-restriction-bypass-prefix") ?: ""
-
-        if (!threadStarted) {
-            NametagThread().start()
-            threadStarted = true
-        }
-        refreshTask?.cancel()
-        refreshTask = null
-        providers.clear()
-        teamMap.clear()
-        
-        // Periodic task to refresh all nametags (catches OP changes, rank changes, etc.)
-        refreshTask = Bukkit.getScheduler().runTaskTimerAsynchronously(UnifyCore.instance, Runnable {
-            for (player in Bukkit.getOnlinePlayers()) {
-                reloadPlayer(player)
-            }
-        }, 40L, 40L)
-
-        // Register providers (higher weight = higher priority)
-        registerProvider(OpNametagProvider())
-        registerProvider(NametagProvider.DefaultNametagProvider())
-        Bukkit.getOnlinePlayers().forEach { player ->
-            reloadPlayer(player)
-            reloadOthersFor(player)
-        }
+        val config = UnifyCore.instance.config
+        updateInterval = config.getInt("nametags.update-interval-ticks", updateInterval).coerceAtLeast(1)
+        isNametagRestrictionEnabled = config.getBoolean("nametags.packet-restriction", false)
+        nametagRestrictBypass = config.getString("nametags.packet-restriction-bypass-prefix") ?: ""
+        // nametags.enabled only controls Unify's own plates from config; plugin providers work regardless.
+        providers.setBuiltIns(
+            if (config.getBoolean("nametags.enabled", false)) {
+                listOf(OpNametagProvider(), NametagProvider.DefaultNametagProvider())
+            } else emptyList()
+        )
+        restart()
     }
 
     fun registerProvider(newProvider: NametagProvider) {
+        if (!UnifyModule.NAMETAGS.allowsRegistration(newProvider)) return
         providers.add(newProvider)
-        providers.sortWith { a, b -> Ints.compare(b.weight, a.weight) }
+        restart()
+    }
+
+    internal fun forgetPlugin(plugin: Plugin) {
+        val rulesRemoved = hideRules.removeAll { owningPlugin(it) === plugin }
+        when {
+            providers.removeOwnedBy(plugin) -> restart()
+            rulesRemoved -> refreshAll()
+        }
+    }
+
+    private fun restart() {
+        NametagLines.disable()
+        refreshTask?.cancel()
+        refreshTask = null
+        pending.clear()
+        synchronized(sendLock) {
+            generation++
+            // Teams outlive the server's maps on the client, and the maps are rebuilt below, so drop
+            // every team we sent; otherwise old prefixes stay visible and old teams pile up.
+            if (enabled) clearClientTeams()
+            enabled = UnifyModule.NAMETAGS.isEnabled && !providers.isEmpty()
+            teamMap.clear()
+            hiddenFor.clear()
+            registeredTeams.clear()
+        }
+        if (!enabled) return
+
+        if (thread == null) {
+            thread = NametagThread().also { it.start() }
+        }
+        NametagLines.enable()
+        viewers.clear()
+        Bukkit.getOnlinePlayers().forEach { viewers[it.uniqueId] = it }
+
+        // Periodic refresh (catches OP changes, rank changes, etc.).
+        refreshTask = Bukkit.getScheduler().runTaskTimer(UnifyCore.instance, Runnable { refreshAll() }, 40L, 40L)
+        refreshAll()
     }
 
     /**
@@ -90,134 +123,110 @@ object NametagHandler {
      * picks a prefix, and the team it lands on is sent with `ALWAYS` on every refresh — so a plugin
      * that wants a name gone has to be asked here, before the team goes out.
      *
-     * Rules survive [reloadAll]: they are wiring, not config.
+     * Rules run on the nametag thread like providers do, and survive [reloadAll]: they are wiring, not config.
      */
     fun hideNametagsWhen(rule: (Player) -> Boolean) {
+        if (!UnifyModule.NAMETAGS.allowsRegistration(rule)) return
         hideRules += rule
     }
 
-    private fun isHidden(player: Player): Boolean =
+    internal fun isHidden(player: Player): Boolean =
         hideRules.any { runCatching { it(player) }.getOrDefault(false) }
 
-    fun reloadPlayer(toRefresh: Player) {
-        val update = NametagUpdate(toRefresh)
-
-        if (async) {
-            NametagThread.pendingUpdates[update] = true
-        } else {
-            applyUpdate(update)
-        }
+    internal fun addViewer(player: Player) {
+        viewers[player.uniqueId] = player
     }
 
+    internal fun removeViewer(player: Player) {
+        viewers.remove(player.uniqueId)
+        teamMap.remove(player.uniqueId)
+        hiddenFor.remove(player.uniqueId)
+        // Forget them as a target too, so their plate is sent fresh when they rejoin.
+        teamMap.values.forEach { it.remove(player.uniqueId) }
+        hiddenFor.values.forEach { it.remove(player.uniqueId) }
+    }
+
+    private fun refreshAll() {
+        if (!enabled) return
+        viewers.keys.forEach { pending += NametagUpdate(it, null) }
+    }
+
+    /** Refreshes [toRefresh]'s plate for every viewer. Safe to call from any thread. */
+    fun reloadPlayer(toRefresh: Player) {
+        if (enabled) pending += NametagUpdate(toRefresh.uniqueId, null)
+    }
+
+    /** Refreshes every other player's plate as [refreshFor] sees them. */
     fun reloadOthersFor(refreshFor: Player) {
-        for (toRefresh in Bukkit.getOnlinePlayers()) {
-            if (refreshFor === toRefresh) {
-                continue
-            }
-            reloadPlayer(toRefresh, refreshFor)
-        }
+        if (!enabled) return
+        viewers.keys.filter { it != refreshFor.uniqueId }.forEach { pending += NametagUpdate(it, refreshFor.uniqueId) }
     }
 
     fun reloadPlayer(toRefresh: Player, refreshFor: Player) {
-        val update = NametagUpdate(toRefresh, refreshFor)
+        if (enabled) pending += NametagUpdate(toRefresh.uniqueId, refreshFor.uniqueId)
+    }
 
-        if (async) {
-            NametagThread.pendingUpdates[update] = true
+    internal fun applyUpdate(update: NametagUpdate) {
+        if (!enabled) return
+        val target = viewers[update.target] ?: return
+        if (update.viewer == null) {
+            viewers.values.forEach { reloadPlayerInternal(target, it) }
         } else {
-            applyUpdate(update)
+            viewers[update.viewer]?.let { reloadPlayerInternal(target, it) }
         }
     }
 
-    internal fun applyUpdate(nametagUpdate: NametagUpdate) {
-        val toRefreshPlayer = Bukkit.getPlayerExact(nametagUpdate.toRefresh) ?: return
-
-        if (nametagUpdate.refreshFor == null) {
-            for (refreshFor in Bukkit.getOnlinePlayers()) {
-                reloadPlayerInternal(toRefreshPlayer, refreshFor)
-            }
-        } else {
-            val refreshForPlayer = Bukkit.getPlayerExact(nametagUpdate.refreshFor!!)
-            if (refreshForPlayer != null) {
-                reloadPlayerInternal(toRefreshPlayer, refreshForPlayer)
-            }
-        }
-    }
-
-    internal fun reloadPlayerInternal(toRefresh: Player, refreshFor: Player) {
-        if (!refreshFor.hasMetadata("Nametag-Applied")) {
-            return
-        }
+    private fun reloadPlayerInternal(toRefresh: Player, refreshFor: Player) {
+        val startedIn = generation
 
         if (isHidden(toRefresh)) {
-            UnifyCore.instance.nms?.sendHideNametagPacket(refreshFor, toRefresh)
-            return
-        }
-
-        var provided: NametagInfo? = null
-        var providerIndex = 0
-
-        while (provided == null && providers.isNotEmpty()) {
-            provided = providers[providerIndex++].fetchNametag(toRefresh, refreshFor)
-        }
-
-        if (provided == null) {
-            return
-        }
-
-        if (isNametagRestrictionEnabled) {
-            val prefix = provided.prefix
-            if (!prefix.equals(nametagRestrictBypass, ignoreCase = true)) {
-                return
+            synchronized(sendLock) {
+                if (startedIn != generation) return
+                NametagLines.update(toRefresh, refreshFor, emptyList())
+                if (hiddenFor.getOrPut(refreshFor.uniqueId) { ConcurrentHashMap.newKeySet() }.add(toRefresh.uniqueId)) {
+                    UnifyCore.instance.nms?.sendHideNametagPacket(refreshFor, toRefresh)
+                    teamMap[refreshFor.uniqueId]?.remove(toRefresh.uniqueId)
+                }
             }
+            return
         }
 
-        var teamInfoMap = HashMap<UUID, NametagInfo>()
-        if (teamMap.containsKey(refreshFor.uniqueId)) {
-            teamInfoMap = teamMap[refreshFor.uniqueId]!!
+        // No answer means a plain plate: a blank team replaces whatever prefix the player had before.
+        val provided = providers.firstOf { it.fetchNametag(toRefresh, refreshFor) }
+            ?: NametagProvider.createNametag("", "")
+
+        if (isNametagRestrictionEnabled && !provided.prefix.equals(nametagRestrictBypass, ignoreCase = true)) {
+            NametagLines.update(toRefresh, refreshFor, emptyList())
+            return
         }
 
-        // Get dynamic limits from NMS handler
-        val nms = UnifyCore.instance.nms
-        val prefixLimit = nms?.getTeamPrefixLimit() ?: 16
-
-        if (provided.prefix.length > prefixLimit) {
-            provided.prefix = provided.prefix.substring(0, prefixLimit)
-        }
-
-        if (provided.suffix.length > prefixLimit) {
-            provided.suffix = provided.suffix.substring(0, prefixLimit)
-        }
-
+        val prefixLimit = UnifyCore.instance.nms?.getTeamPrefixLimit() ?: 16
+        val prefix = provided.prefix.take(prefixLimit)
+        val suffix = provided.suffix.take(prefixLimit)
         val sortWeight = TabHandler.sortWeight(toRefresh)
-        val team = getOrCreate(provided.prefix, provided.suffix, sortWeight)
 
-        ScoreboardTeamPacketMod(team.name, team.prefix, team.suffix, arrayListOf(toRefresh.name), 0).send(refreshFor)
-        teamInfoMap[toRefresh.uniqueId] = team
-        teamMap[refreshFor.uniqueId] = teamInfoMap
-    }
-
-    internal fun initiatePlayer(player: Player) {
-        for (teamInfo in registeredTeams) {
-            teamInfo.teamAddPacket.send(player)
-        }
-    }
-
-    internal fun getOrCreate(prefix: String, suffix: String, sortWeight: Int = 0): NametagInfo {
-        val clampedWeight = sortWeight.coerceIn(0, TabSortProvider.MAX_WEIGHT)
-        for (teamInfo in registeredTeams) {
-            if (teamInfo.prefix == prefix && teamInfo.suffix == suffix && teamInfo.sortWeight == clampedWeight) {
-                return teamInfo
+        synchronized(sendLock) {
+            if (startedIn != generation) return
+            hiddenFor[refreshFor.uniqueId]?.remove(toRefresh.uniqueId)
+            val team = getOrCreate(prefix, suffix, sortWeight)
+            val sent = teamMap.getOrPut(refreshFor.uniqueId) { ConcurrentHashMap() }
+            // The periodic refresh asks about every pair; only the ones that changed need a packet.
+            if (sent[toRefresh.uniqueId] !== team) {
+                UnifyCore.instance.nms?.sendNametagPacket(refreshFor, toRefresh, team.name, team.prefix, team.suffix)
+                sent[toRefresh.uniqueId] = team
             }
+            NametagLines.update(toRefresh, refreshFor, provided.lines)
         }
+    }
+
+    // Callers hold sendLock.
+    private fun getOrCreate(prefix: String, suffix: String, sortWeight: Int): NametagInfo {
+        val clampedWeight = sortWeight.coerceIn(0, TabSortProvider.MAX_WEIGHT)
+        registeredTeams.firstOrNull { it.prefix == prefix && it.suffix == suffix && it.sortWeight == clampedWeight }
+            ?.let { return it }
 
         val newTeam = NametagInfo(nextTeamName(clampedWeight), prefix, suffix, clampedWeight)
         registeredTeams.add(newTeam)
-
-        val addPacket = newTeam.teamAddPacket
-        for (player in Bukkit.getOnlinePlayers()) {
-            addPacket.send(player)
-        }
-
         return newTeam
     }
 
@@ -232,6 +241,33 @@ object NametagHandler {
 
     fun isEnabled(): Boolean {
         return enabled
+    }
+
+    // Callers hold sendLock.
+    private fun clearClientTeams() {
+        val nms = UnifyCore.instance.nms ?: return
+        for ((viewerId, teams) in teamMap) {
+            val viewer = viewers[viewerId] ?: continue
+            teams.values.map { it.name }.distinct().forEach { nms.sendRemoveTeamPacket(viewer, it) }
+        }
+        for ((viewerId, hidden) in hiddenFor) {
+            val viewer = viewers[viewerId] ?: continue
+            hidden.mapNotNull { viewers[it] }.forEach { nms.sendRemoveNametagTeamPacket(viewer, it) }
+        }
+    }
+
+    internal fun disable() {
+        thread?.interrupt()
+        thread = null
+        refreshTask?.cancel()
+        refreshTask = null
+        pending.clear()
+        synchronized(sendLock) {
+            generation++
+            if (enabled) clearClientTeams()
+            enabled = false
+        }
+        NametagLines.disable()
     }
 
     fun providerCount(): Int {

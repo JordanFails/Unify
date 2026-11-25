@@ -82,8 +82,8 @@ internal class RidingNametagLines(private val parseText: (String) -> Component) 
         val interactions = lines.map {
             Interaction(EntityTypes.INTERACTION, vehicle.level()).apply {
                 setPos(vehicle.x, vehicle.y, vehicle.z)
-                setWidth(0f)
-                setHeight(LINE_HEIGHT)
+                width = 0f
+                height = LINE_HEIGHT
             }
         }
         for (entity in interactions + stands) {
@@ -120,7 +120,7 @@ internal class RidingNametagLines(private val parseText: (String) -> Component) 
         }
 
     private fun Entity.sendData(connection: ServerGamePacketListenerImpl) {
-        entityData.packAll()?.let { connection.send(ClientboundSetEntityDataPacket(id, it)) }
+        entityData.packAll().let { connection.send(ClientboundSetEntityDataPacket(id, it)) }
     }
 
     private fun addEntityPacket(entity: Entity) = ClientboundAddEntityPacket(

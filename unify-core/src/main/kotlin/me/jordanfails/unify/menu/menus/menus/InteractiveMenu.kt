@@ -622,23 +622,6 @@ abstract class InteractiveMenu : Menu {
 
     // ── Internal notifications ───────────────────────────────────────────────
 
-    internal fun handleItemRemoval(player: Player, slot: Int, removedItem: ItemStack) {
-        // Used by older listener paths; prefer takeFromSlot
-        val old = getSlotItem(slot)
-        setSlotItem(slot, null)
-        notifyChanged(player, slot, old, null)
-        if (getSlotBehavior(slot) == SlotBehavior.OUTPUT_ONLY) {
-            onResultTaken(player, slot, removedItem, removedItem.amount)
-            if (autoRefreshResults) refreshResults(player)
-        }
-    }
-
-    internal fun handleItemPlacement(player: Player, slot: Int, placedItem: ItemStack) {
-        val old = getSlotItem(slot)
-        setSlotItem(slot, placedItem)
-        notifyChanged(player, slot, old, placedItem)
-    }
-
     private fun notifyChanged(player: Player, slot: Int, oldItem: ItemStack?, newItem: ItemStack?) {
         onSlotChange(player, slot, oldItem, newItem)
         // Skip onContentsChanged for pure result-slot rewrites from refreshResults

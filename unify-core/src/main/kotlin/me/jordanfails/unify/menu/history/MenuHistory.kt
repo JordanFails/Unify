@@ -78,6 +78,11 @@ object MenuHistory {
         stacks.remove(player.uniqueId)
     }
 
+    /** Drops every history entry [matches] picks, so "back" can't reopen a disabled plugin's menu. */
+    internal fun removeIf(matches: (Menu) -> Boolean) {
+        stacks.values.forEach { stack -> synchronized(stack) { stack.removeAll(matches) } }
+    }
+
     fun clearAll() {
         stacks.clear()
     }

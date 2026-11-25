@@ -134,8 +134,6 @@ abstract class ScrollableMenu(
         return resolved.coerceIn(if (hasBorder()) 27 else 9, 54)
     }
 
-    override fun getMinSize(): Int = 54
-
     /**
      * Whether decorative border panes should be drawn around the edges.
      */

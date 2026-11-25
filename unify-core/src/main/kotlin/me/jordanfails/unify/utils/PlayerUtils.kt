@@ -1,5 +1,6 @@
 package me.jordanfails.unify.utils
 
+import com.cryptomorin.xseries.XSound
 import me.jordanfails.unify.UnifyCore
 import org.bukkit.*
 import org.bukkit.attribute.Attribute
@@ -143,7 +144,7 @@ object PlayerUtils {
                 FixedMetadataValue(UnifyCore.instance, player.uniqueId.toString())
             )
         }
-        playSound(player, Sound.ENTITY_CHICKEN_EGG, 1.0f)
+        playSound(player, XSupport.resolveSound(XSound.ENTITY_CHICKEN_EGG), 1.0f)
         player.sendMessage(CC.translate("&5&l(LOOT) &dProtected Items Dropped."))
         player.sendMessage(CC.translate("&7Since your inventory was full, your items were dropped."))
     }
