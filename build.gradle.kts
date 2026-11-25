@@ -57,7 +57,6 @@ tasks.register("buildModern") {
     group = "build"
     description = "Build modern modules (Paper 1.20.6+)"
     dependsOn(":unify-core:shadowJarModern")
-    dependsOn(":unify-nms:unify-nms-v1_16_R3:jar")
     dependsOn(":unify-nms:unify-nms-v1_20_R4:jar")
     dependsOn(":unify-nms:unify-nms-v1_21_R1:jar")
     dependsOn(":unify-nms:unify-nms-v26_R1:jar")
@@ -106,8 +105,9 @@ val bundledModernTask = tasks.register<Jar>("bundledModern") {
     // NMS handlers are Mojang-mapped; without this Paper 1.20.5+ would try to remap them as Spigot-mapped.
     manifest { attributes["paperweight-mappings-namespace"] = "mojang" }
 
+    // No 1.16 handler here: 1.16 servers can't load this jar (api-version 1.18), and leaving it out
+    // means the modern build never needs BuildTools' Spigot jars.
     from({ zipTree(modernCoreJar) })
-    from({ zipTree(nms_v1_16_R3) })
     from({ zipTree(nms_v1_20_R4) })
     from({ zipTree(nms_v1_21_R1) })
     from({ zipTree(nms_v26_R1) })

@@ -38,8 +38,6 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile>().configureEa
     }
 }
 
-tasks {
-    assemble {
-        dependsOn(reobfJar)
-    }
-}
+// Unify ships these Mojang-mapped (the modern bundle sets the mappings manifest), so the plain jar is the
+// artifact; reobfuscating is wasted work on 1.20/1.21 and impossible on 26.x, which has no obfuscation.
+paperweight.reobfArtifactConfiguration = io.papermc.paperweight.userdev.ReobfArtifactConfiguration.MOJANG_PRODUCTION
