@@ -31,12 +31,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Checkout honey
-        uses: actions/checkout@v7
-        with:
-          ref: main
-          path: honey
-
       # Legacy modules compile on 8, modern NMS on 21, the 26.x handler on 26. The last one listed is the default.
       - name: Set up JDKs 8, 26 and 21
         uses: actions/setup-java@v5
@@ -69,6 +63,24 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle.kts', '**/*.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'gradle.properties') }}
           restore-keys: |
             gradle-${{ runner.os }}-
+
+      # The legacy NMS modules compile against full Spigot server jars, which only exist after running
+      # BuildTools. Build them once and cache them; later runs skip this entirely.
+      - name: Cache Spigot server jars
+        id: spigot-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/spigotmc
+          key: spigot-buildtools-1.8.8-1.9.4-1.12.2-1.16.5
+
+      - name: Build Spigot server jars
+        if: steps.spigot-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p buildtools && cd buildtools
+          curl -fsSL -o BuildTools.jar https://hub.spigotmc.org/jenkins/job/BuildTools/lastSuccessfulBuild/artifact/target/BuildTools.jar
+          for version in 1.8.8 1.9.4 1.12.2 1.16.5; do
+            "$JAVA_HOME_8_X64/bin/java" -jar BuildTools.jar --rev "$version"
+          done
 
       - name: Make gradlew executable
         run: chmod +x gradlew
